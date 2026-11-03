@@ -131,6 +131,7 @@ not implemented yet.
 ## Documentation
 
 - [AGENTS.md](AGENTS.md): implementation rules for AI coding agents
+- [docs/implementation_plan.md](docs/implementation_plan.md): staged server implementation plan
 - `docs/architecture.md`: deeper architecture notes
 - `docs/protocol.md`: iroh JSON command definitions
 - `docs/database.md`: schema and migration notes
