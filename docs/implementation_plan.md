@@ -126,6 +126,81 @@ Acceptance:
 - expected configuration failures do not panic;
 - server starts and exits cleanly.
 
+## Phase 0.5 — CI foundation
+
+CI starts after the Cargo workspace exists. Public repositories use GitHub
+Actions.
+
+### Step 0.5 — Base CI workflow
+
+Add:
+
+```text
+.github/workflows/ci.yml
+```
+
+Triggers:
+
+```text
+push to main
+pull_request
+workflow_dispatch
+```
+
+Permissions:
+
+```yaml
+permissions:
+  contents: read
+```
+
+Jobs:
+
+```text
+fmt
+clippy
+test
+```
+
+Rules:
+
+- use `ubuntu-latest` GitHub-hosted runners;
+- use `cargo fmt --check`;
+- use `cargo clippy --all-targets -- -D warnings`;
+- use `cargo test`;
+- cache Cargo dependencies;
+- cancel superseded runs;
+- pin third-party Actions to commit SHAs;
+- do not use `pull_request_target`;
+- do not expose repository secrets to fork pull requests.
+
+### Step 0.6 — Dependency and security automation
+
+Add:
+
+```text
+.github/dependabot.yml
+SECURITY.md
+```
+
+Dependabot updates:
+
+```text
+cargo dependencies
+GitHub Actions
+```
+
+Do not enable automatic merging of dependency updates.
+
+### Step 0.7 — Branch protection
+
+For `main`:
+
+- require the CI checks;
+- disallow force pushes;
+- require pull requests once the project is active;
+- keep production deployment credentials out of the repository.
+
 ## Phase 1 — iroh endpoint
 
 ### Step 1.1 — Persistent secret key
@@ -425,7 +500,10 @@ Implement:
 Do not add Tantivy unless real usage proves PostgreSQL search is
 insufficient.
 
-## Phase 7 — Docker deployment
+## Phase 7 — Docker, CI/CD, and deployment
+
+The production target is the owner's self-hosted server, behind NAT. GitHub
+Actions publishes images; the server pulls explicit versions.
 
 ### Step 7.1 — Server image
 
@@ -436,6 +514,14 @@ Implement a multi-stage Dockerfile:
 - non-root UID 1000;
 - no HTTP port;
 - optional ffmpeg/ffprobe later.
+
+The image must contain the server binary and the operational subcommands:
+
+```text
+aiqiezi-server migrate
+aiqiezi-server migrate-status
+aiqiezi-server healthcheck
+```
 
 ### Step 7.2 — Compose stack
 
@@ -455,9 +541,32 @@ Requirements:
 - PostgreSQL data at `/mnt/data/aiqiezi/postgres`;
 - media at `/mnt/data/aiqiezi/media`;
 - keys at `/mnt/data/aiqiezi/keys`;
-- backups at `/mnt/data/aiqiezi/backups`.
+- backups at `/mnt/data/aiqiezi/backups`;
+- deploy files at `/mnt/data/aiqiezi/deploy`.
 
-### Step 7.3 — Backup and restore
+Do not check out the full source repository on the production server.
+
+### Step 7.3 — Migration and readiness commands
+
+Implement server subcommands used by deployment:
+
+```text
+aiqiezi-server migrate
+aiqiezi-server migrate-status
+aiqiezi-server healthcheck
+```
+
+Health checks verify:
+
+- process is alive;
+- PostgreSQL is reachable;
+- migrations are current;
+- media storage is writable;
+- iroh endpoint is bound.
+
+No HTTP health endpoint is required.
+
+### Step 7.4 — Backup and restore
 
 Implement scripts for:
 
@@ -470,6 +579,103 @@ Acceptance:
 
 - a full restore test succeeds;
 - documentation exists for recovery.
+
+### Step 7.5 — Controlled deploy script
+
+Create `scripts/deploy.sh` for the production server.
+
+Flow:
+
+```text
+1. Acquire an exclusive deployment lock.
+2. Validate the requested image tag.
+3. Pull the new image.
+4. Record the currently running image ID/tag.
+5. Back up PostgreSQL.
+6. Run migrations as a one-shot job.
+7. Recreate only the server container.
+8. Wait for readiness.
+9. Restore the previous image on failure.
+10. Retain the backup and previous image for rollback.
+```
+
+Rules:
+
+- never use `latest` in production;
+- never deploy when the backup fails;
+- never recreate the server when migrations fail;
+- do not automatically upgrade PostgreSQL with the app;
+- keep deployment logs.
+
+### Step 7.6 — GitHub image publishing
+
+Add a release workflow for version tags:
+
+```text
+vX.Y.Z
+```
+
+Publish to GitHub Container Registry:
+
+```text
+ghcr.io/gocpicnic/aiqiezi-server:vX.Y.Z
+ghcr.io/gocpicnic/aiqiezi-server:latest
+ghcr.io/gocpicnic/aiqiezi-server:sha-<commit>
+```
+
+Requirements:
+
+- pull requests build but do not push;
+- main builds and may push `main` and `sha-*` tags;
+- version tags create GitHub Releases;
+- use `GITHUB_TOKEN` with least privilege;
+- require approval for production deployment.
+
+### Step 7.7 — systemd backup and health timers
+
+Use systemd on the remote server for scheduled operations, not automatic code
+updates.
+
+Suggested units:
+
+```text
+aiqiezi-backup.service
+aiqiezi-backup.timer
+aiqiezi-healthcheck.service
+aiqiezi-healthcheck.timer
+aiqiezi-media-check.service
+aiqiezi-media-check.timer
+```
+
+Suggested cadence:
+
+- PostgreSQL backup: daily or hourly;
+- health check: every 5 minutes;
+- media checksum/integrity check: weekly;
+- retention cleanup: daily.
+
+Deployment remains a controlled manual action until migrations and rollback are
+proven.
+
+### Step 7.8 — Watchtower evaluation
+
+Watchtower is optional and must only be added after:
+
+- migrations are backward-compatible;
+- automatic backups are verified;
+- health checks work;
+- rollback is tested;
+- production uses immutable version tags.
+
+Constraints:
+
+- watch only the server container;
+- exclude PostgreSQL;
+- use version tags, not `latest`;
+- run a backup before updates;
+- verify readiness after updates;
+- retain the previous image for rollback;
+- enable notifications.
 
 ## Phase 8 — CLI integration boundary
 
