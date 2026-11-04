@@ -132,12 +132,12 @@ Acceptance:
 - expected configuration failures do not panic;
 - server starts and exits cleanly.
 
-## Phase 0.5 — CI foundation
+## Phase 0B — CI foundation
 
 CI starts after the Cargo workspace exists. Public repositories use GitHub
 Actions.
 
-### Step 0.5 — Base CI workflow
+### Step 0B.1 — Base CI workflow
 
 Add:
 
@@ -172,15 +172,15 @@ Rules:
 
 - use `ubuntu-latest` GitHub-hosted runners;
 - use `cargo fmt --check`;
-- use `cargo clippy --all-targets -- -D warnings`;
-- use `cargo test`;
+- use `cargo clippy --workspace --all-targets -- -D warnings`;
+- use `cargo test --workspace`;
 - cache Cargo dependencies;
 - cancel superseded runs;
 - pin third-party Actions to commit SHAs;
 - do not use `pull_request_target`;
 - do not expose repository secrets to fork pull requests.
 
-### Step 0.6 — Dependency and security automation
+### Step 0B.2 — Dependency and security automation
 
 Add:
 
@@ -198,7 +198,7 @@ GitHub Actions
 
 Do not enable automatic merging of dependency updates.
 
-### Step 0.7 — Branch protection
+### Step 0B.3 — Branch protection
 
 For `main`:
 
@@ -284,13 +284,24 @@ Add a development PostgreSQL service under `compose/`.
 Implement:
 
 - sqlx migration directory;
-- startup policy: auto-migrate or refuse when pending;
+- explicit migration command;
+- startup policy: refuse to start when migrations are pending;
 - test database reset.
+
+Recommended configuration:
+
+```text
+AIQIEZI_AUTO_MIGRATE=false
+```
+
+Deployment runs migrations before recreating the server. The server never
+silently applies schema changes during a normal restart.
 
 Acceptance:
 
-- empty database becomes ready;
-- pending migrations are handled deterministically.
+- empty database can be migrated explicitly;
+- startup fails clearly when migrations are pending;
+- deployment can run migrations as a separate one-shot step.
 
 ### Step 2.3 — Client whitelist schema
 
@@ -337,6 +348,17 @@ Requirements:
 - indexes for normal query paths;
 - cursor-friendly ordering;
 - `pg_trgm` extension.
+
+For soft-deleted VFS entries, use a partial unique index instead of a plain
+unique constraint:
+
+```sql
+create unique index vfs_nodes_parent_name_active
+on vfs_nodes(parent_id, name)
+where deleted = false;
+```
+
+This allows deleting and re-importing the same path.
 
 ### Step 2.5 — Repository layer
 
@@ -413,15 +435,16 @@ Implement:
 - cycle and orphan handling;
 - deterministic ordering.
 
-### Step 4.3 — Asset metadata create/get
+### Step 4.3 — Asset metadata read and test fixtures
 
-Implement metadata-only asset creation:
+Implement:
 
-```json
-{"command":"asset-create","content_hash":"...","size":123,"mime_type":"image/jpeg"}
-```
+- asset lookup by hash/ID;
+- internal test fixtures or an internal importer for metadata-only asset rows.
 
-No blob transfer yet.
+Do not expose a public `asset-create` command. Upload finalization is the
+canonical public asset-creation path, so asset, VFS, metadata, and search rows
+are created together atomically.
 
 ### Step 4.4 — Asset list/get
 
@@ -470,6 +493,16 @@ Implement:
 - blob availability check;
 - download metadata response;
 - rejection for unknown/disabled clients.
+
+Initial security model: trusted whitelist.
+
+Any whitelisted client may fetch any blob if it knows the content hash.
+Per-asset ACLs are not implemented in the first version because iroh-blobs does
+not consult PostgreSQL per blob request.
+
+This is acceptable for a single-owner archive where all whitelisted clients
+belong to the owner. Document the limitation and revisit per-asset authorization
+if multi-user access is added.
 
 ## Phase 6 — Search
 
@@ -562,6 +595,7 @@ Requirements:
 The image must contain the server binary and the operational subcommands:
 
 ```text
+aiqiezi-server run
 aiqiezi-server migrate
 aiqiezi-server migrate-status
 aiqiezi-server healthcheck
@@ -598,6 +632,9 @@ environment:
 - host data directories do not need a separate setup script;
 - PostgreSQL uses a private bridge network;
 - PostgreSQL binds to `127.0.0.1:5432`;
+- PostgreSQL uses its official image entrypoint for data-directory ownership;
+- do not set a fixed `user:` on the PostgreSQL service;
+- set `PGDATA=/var/lib/postgresql/data/pgdata`;
 - persistent data under `/mnt/data/aiqiezi`;
 - PostgreSQL data at `/mnt/data/aiqiezi/postgres`;
 - media at `/mnt/data/aiqiezi/media`;
@@ -607,15 +644,23 @@ environment:
 
 Do not check out the full source repository on the production server.
 
+If PostgreSQL reports a data-directory permission error, a one-time host-side
+`chown 999:999 /mnt/data/aiqiezi/postgres` is acceptable. This is troubleshooting,
+not a required setup script.
+
 ### Step 7.3 — Migration and readiness commands
 
 Implement server subcommands used by deployment:
 
 ```text
+aiqiezi-server run
 aiqiezi-server migrate
 aiqiezi-server migrate-status
 aiqiezi-server healthcheck
 ```
+
+`run` starts the normal server process. The deploy script uses the other
+subcommands for migrations and readiness.
 
 Health checks verify:
 
@@ -666,7 +711,11 @@ Rules:
 - never deploy when the backup fails;
 - never recreate the server when migrations fail;
 - do not automatically upgrade PostgreSQL with the app;
-- keep deployment logs.
+- keep deployment logs;
+- image rollback does not roll back database migrations.
+
+Use backward-compatible, expand/contract migrations. Destructive schema changes
+require a separate maintenance procedure and a tested restore path.
 
 ### Step 7.6 — GitHub image publishing
 
@@ -699,6 +748,7 @@ Requirements:
 - pull requests build but do not push;
 - main builds and may push `main` and `sha-*` tags;
 - version tags create GitHub Releases;
+- production deploys only explicit `vX.Y.Z` tags, never `latest` or `main`;
 - use `GITHUB_TOKEN` with least privilege;
 - no QEMU-based ARM builds initially;
 - ARM64 support, when needed, uses a native ARM64 runner in a build matrix;

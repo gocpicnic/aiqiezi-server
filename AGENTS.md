@@ -153,6 +153,9 @@ create table clients (
   tokens.
 - Enforce the whitelist at the iroh handshake/firewall layer so JSON and blob
   ALPNs are protected equally.
+- Initial blob access uses the trusted-whitelist model: any whitelisted client
+  may fetch any blob if it knows the content hash.
+- Per-asset blob ACLs are deferred until multi-user access is required.
 - Keep the backend secret key persistent; EndpointId stability depends on it.
 
 ## Security rules

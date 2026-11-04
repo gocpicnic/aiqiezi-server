@@ -93,6 +93,10 @@ aiqiezi-server client-remove <endpoint-id>
 The whitelist is enforced at the iroh connection layer and protects both JSON
 and blob access.
 
+Initial blob access is a trusted-whitelist model: any whitelisted client may
+fetch any blob if it knows the content hash. Per-asset ACLs are deferred until
+multi-user access is required.
+
 ## Data layout
 
 Production data lives outside the repository:
