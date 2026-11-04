@@ -24,6 +24,10 @@ architecture, deployment model, and non-goals.
 - Clients are authorized by an iroh EndpointId whitelist.
 - There is no login, password, or session-token flow.
 - The server is the single source of truth.
+- There is one daemon process with two listeners:
+  - a public iroh endpoint for clients;
+  - a local Unix admin socket for server commands.
+- Admin commands are local-only and never exposed through iroh.
 - The GUI is deferred until the server and CLI are functional.
 
 ## Initial technical decisions
@@ -44,6 +48,10 @@ Setup script:       not required; compose.yaml + .env only
 Server network:     host network
 PostgreSQL network: private bridge, 127.0.0.1:5432
 Data directory:     /mnt/data/aiqiezi
+Daemon model:       one process, two listeners
+Admin transport:    Unix domain socket /run/aiqiezi/admin.sock
+Admin protocol:     JSON Lines, one request per connection
+Instance lock:      /run/aiqiezi/server.lock
 Initial platforms:  linux/amd64 only
 ```
 
@@ -266,6 +274,175 @@ Acceptance:
 - errors use stable error codes;
 - responses are machine-readable.
 
+## Phase 1B — Daemon process and local admin control
+
+The server is one daemon process with two listeners:
+
+```text
+aiqiezi-server run
+├── iroh endpoint + RouterBuilder
+│   ├── /aiqiezi-json/1
+│   └── iroh-blobs
+└── UnixListener
+    └── /run/aiqiezi/admin.sock
+```
+
+Both listeners share the same application state. Do not run two daemon
+processes against the same PostgreSQL database and media store.
+
+### Step 1B.1 — Daemon instance lock
+
+Implement:
+
+- Unix-only `flock` instance lock;
+- lock path `/run/aiqiezi/server.lock`;
+- directory `/run/aiqiezi` with restrictive permissions;
+- acquire before database initialization;
+- release automatically on process exit;
+- `migrate` acquires the same lock to verify the daemon is stopped.
+
+Tests:
+
+- two daemon starts: second fails;
+- lock is released after clean shutdown;
+- stale lock file without an owner does not block a new start;
+- socket and lock paths are in a non-world-writable directory.
+
+### Step 1B.2 — Admin socket and protocol
+
+Implement:
+
+- `tokio::net::UnixListener` at `/run/aiqiezi/admin.sock`;
+- directory mode `0750`;
+- socket mode `0660` or stricter;
+- stale socket removal only when the instance lock is free;
+- JSON Lines request/response, one request per connection.
+
+Request envelope:
+
+```json
+{
+  "version": 1,
+  "request_id": "optional",
+  "command": "status",
+  "params": {}
+}
+```
+
+Success response:
+
+```json
+{
+  "version": 1,
+  "request_id": "optional",
+  "ok": true,
+  "data": {}
+}
+```
+
+Error response:
+
+```json
+{
+  "version": 1,
+  "request_id": "optional",
+  "ok": false,
+  "error": {
+    "code": "invalid_request",
+    "message": "..."
+  }
+}
+```
+
+Stable error codes:
+
+```text
+invalid_request
+not_found
+conflict
+database_unavailable
+migrations_pending
+storage_unavailable
+endpoint_unavailable
+shutting_down
+internal
+```
+
+### Step 1B.3 — Initial admin commands
+
+Implement:
+
+```text
+status
+healthcheck
+shutdown
+reload-whitelist
+```
+
+`status` returns safe operational information:
+
+- server version;
+- iroh EndpointId;
+- uptime;
+- database status;
+- migration status;
+- media storage status;
+- enabled client count.
+
+`healthcheck` checks:
+
+- daemon is running;
+- PostgreSQL is reachable;
+- migrations are current;
+- media storage is writable;
+- iroh endpoint is bound.
+
+`shutdown` triggers the shared shutdown token.
+
+Never return database URLs, relay tokens, or endpoint tickets from `status`.
+
+### Step 1B.4 — Startup and shutdown ordering
+
+Startup:
+
+```text
+1. Load configuration and logging.
+2. Acquire the instance lock.
+3. Connect to PostgreSQL.
+4. Verify migrations are current.
+5. Initialize media storage.
+6. Create the admin UnixListener.
+7. Bind the iroh endpoint.
+8. Start the iroh router.
+9. Write readiness state and log EndpointId/ticket.
+10. Serve both listeners.
+```
+
+Shutdown:
+
+```text
+1. Stop accepting admin commands.
+2. Shut down the iroh router.
+3. Close the iroh endpoint.
+4. Close the PostgreSQL pool.
+5. Remove the admin socket.
+6. Release the instance lock.
+```
+
+### Step 1B.5 — Admin tests
+
+Test:
+
+- admin socket permissions;
+- malformed JSON;
+- unknown command;
+- status response contains no secrets;
+- healthcheck success and failure;
+- duplicate daemon start;
+- clean shutdown from the admin socket;
+- stale socket removal;
+- simultaneous admin requests.
+
 ## Phase 2 — PostgreSQL foundation
 
 ### Step 2.1 — Database connection
@@ -376,7 +553,7 @@ Tests use a disposable PostgreSQL database.
 
 ### Step 3.1 — Client administration commands
 
-Implement server-host commands:
+Implement server-host commands over the local admin socket:
 
 ```text
 aiqiezi-server client-add <endpoint-id> [--label NAME]
@@ -386,11 +563,15 @@ aiqiezi-server client-enable <endpoint-id>
 aiqiezi-server client-remove <endpoint-id>
 ```
 
+The CLI sends JSON to `/run/aiqiezi/admin.sock`; the daemon owns all database
+writes and updates the in-memory whitelist cache immediately.
+
 Acceptance:
 
-- commands update PostgreSQL;
-- duplicate additions are handled;
-- disabled/removed clients are visible in output.
+- commands update PostgreSQL through the daemon;
+- duplicate additions are handled idempotently;
+- disabled/removed clients are visible in output;
+- whitelist changes take effect for subsequent connections without a restart.
 
 ### Step 3.2 — Connection-level enforcement
 
@@ -400,7 +581,8 @@ Implement:
 - check the whitelist;
 - reject unknown or disabled clients;
 - update `last_seen_at`;
-- cache with periodic reload.
+- update the whitelist cache immediately on admin changes;
+- keep periodic database reload as a fallback.
 
 Enforcement must protect both JSON and iroh-blobs ALPNs.
 
@@ -644,6 +826,17 @@ environment:
 
 Do not check out the full source repository on the production server.
 
+The admin Unix socket stays inside the container by default. Use:
+
+```bash
+docker compose exec aiqiezi-server aiqiezi-server status
+docker compose exec aiqiezi-server aiqiezi-server client-add <endpoint-id>
+docker compose exec aiqiezi-server aiqiezi-server healthcheck
+```
+
+Optional host-side access requires a bind-mounted `/run/aiqiezi` directory with
+restrictive permissions. Do not expose the admin socket over TCP or iroh.
+
 If PostgreSQL reports a data-directory permission error, a one-time host-side
 `chown 999:999 /mnt/data/aiqiezi/postgres` is acceptable. This is troubleshooting,
 not a required setup script.
@@ -661,6 +854,10 @@ aiqiezi-server healthcheck
 
 `run` starts the normal server process. The deploy script uses the other
 subcommands for migrations and readiness.
+
+`status`, `healthcheck`, client administration, and `shutdown` connect to the
+local Unix admin socket. `migrate` and `migrate-status` are one-shot commands
+that use PostgreSQL directly and must hold the daemon instance lock.
 
 Health checks verify:
 
@@ -698,11 +895,12 @@ Flow:
 3. Pull the new image.
 4. Record the currently running image ID/tag.
 5. Back up PostgreSQL.
-6. Run migrations as a one-shot job.
-7. Recreate only the server container.
-8. Wait for readiness.
-9. Restore the previous image on failure.
-10. Retain the backup and previous image for rollback.
+6. Stop the server container.
+7. Run migrations as a one-shot job with the daemon lock free.
+8. Recreate only the server container.
+9. Wait for readiness through the admin socket.
+10. Restore the previous image on failure.
+11. Retain the backup and previous image for rollback.
 ```
 
 Rules:
@@ -710,6 +908,8 @@ Rules:
 - never use `latest` in production;
 - never deploy when the backup fails;
 - never recreate the server when migrations fail;
+- stop the daemon before migrations;
+- keep the previous image and backup until readiness succeeds;
 - do not automatically upgrade PostgreSQL with the app;
 - keep deployment logs;
 - image rollback does not roll back database migrations.
@@ -817,7 +1017,9 @@ Document:
 - error codes;
 - every command;
 - pagination;
-- whitelist failures.
+- whitelist failures;
+- admin Unix socket protocol;
+- admin request/response envelopes and error codes.
 
 ### Step 8.2 — Client library handoff
 
