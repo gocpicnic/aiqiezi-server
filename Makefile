@@ -5,10 +5,11 @@ ENV_FILE ?= .env
 ENV_PATH := $(abspath $(ENV_FILE))
 BIN := target/release/aiqiezi-server
 MUSL_TARGET := x86_64-unknown-linux-musl
+CARGO_VERSION := $(shell $(CARGO) pkgid -p aiqiezi-server 2>/dev/null | sed 's/.*#//; s/[^A-Za-z0-9_.-]/-/g')
 BUILD_DATE := $(shell /bin/date -u +%Y%m%d%H%M%S)
 RUNTIME_DIR ?= ./data/run
 IMAGE_REPO ?= ghcr.io/gocpicnic/aiqiezi-server
-APP_VERSION ?= dev
+APP_VERSION ?= v$(CARGO_VERSION)
 IMAGE_TAG ?= $(APP_VERSION)-$(BUILD_DATE)
 DOCKER_PLATFORM ?= linux/amd64
 IMAGE_TAR_DIR ?= imagefiles
@@ -19,14 +20,14 @@ IMAGE := $(IMAGE_REPO):$(IMAGE_TAG)
 # Declare all targets as PHONY.
 .PHONY: help env check-env build build-static setup-musl run run-debug version \
 	status healthcheck shutdown docker-image docker-push docker-save \
-	fmt fmt-check check test clippy ci clean
+	check-image-version fmt fmt-check check test clippy ci clean
 
 help:
 	@printf 'Usage:\n'
 	@printf '  make env          Create %s from .env.example if needed\n' "$(ENV_FILE)"
 	@printf '  make build        Build the release server binary\n'
 	@printf '  make build-static Build the static musl binary into dist/\n'
-	@printf '  make docker-image Build the server image (set APP_VERSION=vX.Y.Z)\n'
+	@printf '  make docker-image Build the server image using the Cargo version\n'
 	@printf '  make docker-push  Build and push the server image to $(IMAGE_REPO)\n'
 	@printf '  make docker-save  Build and save the server image tar into imagefiles/\n'
 	@printf '  make run          Build and run the server with %s\n' "$(ENV_FILE)"
@@ -70,9 +71,16 @@ build-static: setup-musl
 	mkdir -p dist
 	cp "target/$(MUSL_TARGET)/release/aiqiezi-server" dist/aiqiezi-server
 
-docker-image: build-static
+docker-image: check-image-version build-static
 	@printf 'Building image: %s\n' "$(IMAGE)"
 	docker build --platform "$(DOCKER_PLATFORM)" -t "$(IMAGE)" .
+
+check-image-version:
+	@test -n "$(APP_VERSION)" || { \
+		echo "error: could not determine APP_VERSION from Cargo metadata" >&2; \
+		echo "set APP_VERSION explicitly, for example APP_VERSION=v0.1.0" >&2; \
+		exit 1; \
+	}
 
 docker-push: docker-image
 	docker push "$(IMAGE)"

@@ -16,10 +16,11 @@ not use it yet.
 Build the static binary and image on a development machine:
 
 ```bash
-make docker-push APP_VERSION=v0.1.0
+make docker-push
 ```
 
-The image tag includes the current UTC build timestamp, for example:
+`APP_VERSION` is read from the `aiqiezi-server` Cargo package version. The
+image tag also includes the current UTC build timestamp, for example:
 
 ```text
 ghcr.io/gocpicnic/aiqiezi-server:v0.1.0-20261104123045
@@ -28,10 +29,16 @@ ghcr.io/gocpicnic/aiqiezi-server:v0.1.0-20261104123045
 Record the exact tag printed by the build and use it as `AIQIEZI_TAG` in the
 production `.env`. Never deploy `latest` to production.
 
+If needed, override the Cargo-derived version explicitly:
+
+```bash
+make docker-push APP_VERSION=v0.1.0-rc1
+```
+
 To build without pushing and push later, pass the exact tag explicitly:
 
 ```bash
-make docker-image APP_VERSION=v0.1.0
+make docker-image
 # copy the printed tag
 make docker-push IMAGE_TAG=v0.1.0-20261104123045
 ```
@@ -39,7 +46,7 @@ make docker-push IMAGE_TAG=v0.1.0-20261104123045
 If the server cannot pull from GHCR, save and copy the image instead:
 
 ```bash
-make docker-save APP_VERSION=v0.1.0
+make docker-save
 # copy the exact generated tag from the output
 scp imagefiles/aiqiezi-server-v0.1.0-20261104123045.tar user@server:/tmp/
 ```

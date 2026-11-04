@@ -256,10 +256,11 @@ but reserved for Phase 2.
 The server binary is built outside Docker as a static musl binary:
 
 ```bash
-make docker-push APP_VERSION=v0.1.0
+make docker-push
 ```
 
-The build prints the exact immutable tag, for example:
+The build reads the package version from Cargo metadata and appends the UTC
+build timestamp, for example:
 
 ```text
 ghcr.io/gocpicnic/aiqiezi-server:v0.1.0-20261104123045
@@ -267,8 +268,7 @@ ghcr.io/gocpicnic/aiqiezi-server:v0.1.0-20261104123045
 
 Use that exact tag in the production `AIQIEZI_TAG`.
 
-Use `make docker-save APP_VERSION=v0.1.0` when the remote server cannot pull
-from GHCR.
+Use `make docker-save` when the remote server cannot pull from GHCR.
 
 The runtime image uses Debian slim because the container entrypoint needs a
 shell, `tini`, and `gosu`. Rust compilation still happens outside Docker.
