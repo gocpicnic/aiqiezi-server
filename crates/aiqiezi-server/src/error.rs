@@ -19,4 +19,7 @@ pub enum AppError {
 
     #[error("runtime error: {0:#}")]
     Runtime(#[from] anyhow::Error),
+
+    #[error("admin command failed: {code}: {message}")]
+    Admin { code: String, message: String },
 }

@@ -151,6 +151,8 @@ create table clients (
   - local Unix admin socket for server commands.
 - Admin socket path: `/run/aiqiezi/admin.sock`.
 - Instance lock path: `/run/aiqiezi/server.lock`.
+- Runtime directory defaults to `/run/aiqiezi` and is configurable with
+  `AIQIEZI_RUNTIME_DIR`; the development Makefile uses `./data/run`.
 - Admin socket permissions must be restrictive; never expose it over TCP or
   iroh.
 - Admin requests use JSON Lines, one request per connection.

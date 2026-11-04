@@ -18,6 +18,7 @@ pub struct Config {
     pub keys_dir: PathBuf,
     pub media_dir: PathBuf,
     pub config_dir: PathBuf,
+    pub runtime_dir: PathBuf,
     pub database_url: String,
     pub auto_migrate: bool,
     pub relay_url: Option<String>,
@@ -34,6 +35,7 @@ impl fmt::Debug for Config {
             .field("keys_dir", &self.keys_dir)
             .field("media_dir", &self.media_dir)
             .field("config_dir", &self.config_dir)
+            .field("runtime_dir", &self.runtime_dir)
             .field("database_url", &"<redacted>")
             .field("auto_migrate", &self.auto_migrate)
             .field("relay_url", &self.relay_url)
@@ -99,6 +101,10 @@ impl Config {
             None => None,
         };
 
+        let runtime_dir = optional_nonempty(&vars, "AIQIEZI_RUNTIME_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("/run/aiqiezi"));
+
         let log_level =
             optional_nonempty(&vars, "AIQIEZI_LOG_LEVEL").unwrap_or_else(|| "info".to_string());
 
@@ -106,6 +112,7 @@ impl Config {
             keys_dir: data_dir.join("keys"),
             media_dir: data_dir.join("media"),
             config_dir: data_dir.join("config"),
+            runtime_dir,
             data_dir,
             database_url,
             auto_migrate,
@@ -115,6 +122,14 @@ impl Config {
             bind_addr,
             log_level,
         })
+    }
+
+    pub fn admin_socket_path(&self) -> PathBuf {
+        self.runtime_dir.join("admin.sock")
+    }
+
+    pub fn server_lock_path(&self) -> PathBuf {
+        self.runtime_dir.join("server.lock")
     }
 }
 
@@ -170,6 +185,15 @@ mod tests {
         assert_eq!(config.keys_dir, PathBuf::from("/tmp/aiqiezi-test/keys"));
         assert_eq!(config.media_dir, PathBuf::from("/tmp/aiqiezi-test/media"));
         assert_eq!(config.config_dir, PathBuf::from("/tmp/aiqiezi-test/config"));
+        assert_eq!(config.runtime_dir, PathBuf::from("/run/aiqiezi"));
+        assert_eq!(
+            config.admin_socket_path(),
+            PathBuf::from("/run/aiqiezi/admin.sock")
+        );
+        assert_eq!(
+            config.server_lock_path(),
+            PathBuf::from("/run/aiqiezi/server.lock")
+        );
         assert_eq!(
             config.database_url,
             "postgres://user:pass@localhost/aiqiezi"
@@ -209,6 +233,10 @@ mod tests {
             ),
             ("AIQIEZI_RELAY_TOKEN".to_string(), "secret".to_string()),
             ("AIQIEZI_DNS_SERVER".to_string(), "dns.example".to_string()),
+            (
+                "AIQIEZI_RUNTIME_DIR".to_string(),
+                "/tmp/aiqiezi-runtime".to_string(),
+            ),
             ("AIQIEZI_LOG_LEVEL".to_string(), "debug".to_string()),
         ]);
 
@@ -222,6 +250,7 @@ mod tests {
         assert_eq!(config.relay_url.as_deref(), Some("https://relay.example"));
         assert_eq!(config.relay_token.as_deref(), Some("secret"));
         assert_eq!(config.dns_server.as_deref(), Some("dns.example"));
+        assert_eq!(config.runtime_dir, PathBuf::from("/tmp/aiqiezi-runtime"));
         assert_eq!(config.log_level, "debug");
     }
 
@@ -233,6 +262,7 @@ mod tests {
             ("AIQIEZI_RELAY_TOKEN".to_string(), " ".to_string()),
             ("AIQIEZI_DNS_SERVER".to_string(), "".to_string()),
             ("AIQIEZI_BIND_ADDR".to_string(), "".to_string()),
+            ("AIQIEZI_RUNTIME_DIR".to_string(), "".to_string()),
             ("AIQIEZI_LOG_LEVEL".to_string(), "".to_string()),
         ]);
 
@@ -242,6 +272,7 @@ mod tests {
         assert_eq!(config.relay_token, None);
         assert_eq!(config.dns_server, None);
         assert_eq!(config.bind_addr, None);
+        assert_eq!(config.runtime_dir, PathBuf::from("/run/aiqiezi"));
         assert_eq!(config.log_level, "info");
     }
 

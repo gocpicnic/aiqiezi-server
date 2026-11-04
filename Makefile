@@ -6,12 +6,13 @@ ENV_PATH := $(abspath $(ENV_FILE))
 BIN := target/release/aiqiezi-server
 MUSL_TARGET := x86_64-unknown-linux-musl
 BUILD_DATE := $(shell /bin/date -u +%Y%m%d%H%M)
+RUNTIME_DIR ?= ./data/run
 
 .DEFAULT_GOAL := help
 
 # Declare all targets as PHONY.
 .PHONY: help env check-env build build-static setup-musl run run-debug version \
-	fmt fmt-check check test clippy ci clean
+	status healthcheck shutdown fmt fmt-check check test clippy ci clean
 
 help:
 	@printf 'Usage:\n'
@@ -20,6 +21,9 @@ help:
 	@printf '  make build-static Build the static musl binary into dist/\n'
 	@printf '  make run          Build and run the server with %s\n' "$(ENV_FILE)"
 	@printf '  make run-debug    Run the server through cargo without release optimization\n'
+	@printf '  make status       Query the running daemon status\n'
+	@printf '  make healthcheck  Check the running daemon health\n'
+	@printf '  make shutdown     Shut down the running daemon\n'
 	@printf '  make version      Print the built server version\n'
 	@printf '  make fmt          Format all Rust code\n'
 	@printf '  make fmt-check    Check Rust formatting\n'
@@ -57,11 +61,29 @@ build-static: setup-musl
 	cp "target/$(MUSL_TARGET)/release/aiqiezi-server" dist/aiqiezi-server
 
 run: check-env build
-	@set -a; . "$(ENV_PATH)"; set +a; exec "./$(BIN)" run
+	@set -a; . "$(ENV_PATH)"; set +a; \
+		export AIQIEZI_RUNTIME_DIR="$${AIQIEZI_RUNTIME_DIR:-$(RUNTIME_DIR)}"; \
+		exec "./$(BIN)" run
 
 run-debug: check-env
 	@set -a; . "$(ENV_PATH)"; set +a; \
+		export AIQIEZI_RUNTIME_DIR="$${AIQIEZI_RUNTIME_DIR:-$(RUNTIME_DIR)}"; \
 		BUILD_DATE="$(BUILD_DATE)" exec $(CARGO) run -p aiqiezi-server -- run
+
+status: check-env build
+	@set -a; . "$(ENV_PATH)"; set +a; \
+		export AIQIEZI_RUNTIME_DIR="$${AIQIEZI_RUNTIME_DIR:-$(RUNTIME_DIR)}"; \
+		exec "./$(BIN)" status
+
+healthcheck: check-env build
+	@set -a; . "$(ENV_PATH)"; set +a; \
+		export AIQIEZI_RUNTIME_DIR="$${AIQIEZI_RUNTIME_DIR:-$(RUNTIME_DIR)}"; \
+		exec "./$(BIN)" healthcheck
+
+shutdown: check-env build
+	@set -a; . "$(ENV_PATH)"; set +a; \
+		export AIQIEZI_RUNTIME_DIR="$${AIQIEZI_RUNTIME_DIR:-$(RUNTIME_DIR)}"; \
+		exec "./$(BIN)" shutdown
 
 version: build
 	@./$(BIN) --version

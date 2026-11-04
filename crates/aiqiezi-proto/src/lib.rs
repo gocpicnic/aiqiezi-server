@@ -21,6 +21,13 @@ pub mod error_codes {
     pub const INVALID_JSON: &str = "invalid_json";
     pub const UNSUPPORTED_PROTOCOL: &str = "unsupported_protocol";
     pub const UNKNOWN_COMMAND: &str = "unknown_command";
+    pub const NOT_FOUND: &str = "not_found";
+    pub const CONFLICT: &str = "conflict";
+    pub const DATABASE_UNAVAILABLE: &str = "database_unavailable";
+    pub const MIGRATIONS_PENDING: &str = "migrations_pending";
+    pub const STORAGE_UNAVAILABLE: &str = "storage_unavailable";
+    pub const ENDPOINT_UNAVAILABLE: &str = "endpoint_unavailable";
+    pub const SHUTTING_DOWN: &str = "shutting_down";
     pub const INTERNAL: &str = "internal";
 }
 

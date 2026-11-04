@@ -169,28 +169,28 @@ async fn bind_endpoint(config: &Config, key: SecretKey) -> anyhow::Result<Endpoi
     builder.bind().await.context("bind iroh endpoint")
 }
 
-async fn wait_for_shutdown() -> &'static str {
-    #[cfg(unix)]
-    {
-        let mut terminate =
-            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-                .expect("install SIGTERM handler");
+pub struct RunningEndpoint {
+    endpoint: Endpoint,
+    router: iroh::protocol::Router,
+}
 
-        tokio::select! {
-            _ = tokio::signal::ctrl_c() => "Ctrl+C",
-            _ = terminate.recv() => "SIGTERM",
-        }
+impl RunningEndpoint {
+    pub fn id(&self) -> iroh::EndpointId {
+        self.endpoint.id()
     }
 
-    #[cfg(not(unix))]
-    {
-        tokio::signal::ctrl_c().await.ok();
-        "Ctrl+C"
+    pub async fn shutdown(self) -> anyhow::Result<()> {
+        self.router
+            .shutdown()
+            .await
+            .context("shut down iroh router")?;
+        self.endpoint.close().await;
+        Ok(())
     }
 }
 
-/// Start the iroh endpoint, JSON handler, and wait for shutdown.
-pub async fn run(config: &Config) -> anyhow::Result<()> {
+/// Start the iroh endpoint and JSON handler.
+pub async fn start(config: &Config) -> anyhow::Result<RunningEndpoint> {
     let key = load_or_create_key(config)?;
     let endpoint = bind_endpoint(config, key).await?;
     info!("NODE ID: {}", endpoint.id());
@@ -204,18 +204,7 @@ pub async fn run(config: &Config) -> anyhow::Result<()> {
         .spawn();
 
     info!("listening on ALPN {:?}", String::from_utf8_lossy(ALPN_JSON));
-    info!(
-        data_dir = %config.data_dir.display(),
-        "aiqiezi-server is running"
-    );
-
-    let signal = wait_for_shutdown().await;
-    info!("received {signal}, shutting down");
-
-    router.shutdown().await.context("shut down iroh router")?;
-    endpoint.close().await;
-    info!("shutdown complete");
-    Ok(())
+    Ok(RunningEndpoint { endpoint, router })
 }
 
 #[cfg(test)]
@@ -233,6 +222,7 @@ mod tests {
             keys_dir: data_dir.join("keys"),
             media_dir: data_dir.join("media"),
             config_dir: data_dir.join("config"),
+            runtime_dir: data_dir.join("run"),
             database_url: "postgres://test:test@127.0.0.1/test".to_string(),
             auto_migrate: false,
             relay_url: None,

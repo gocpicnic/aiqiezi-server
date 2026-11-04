@@ -5,11 +5,16 @@
   license that can be found in the LICENSE file.
 */
 
+mod admin;
+mod admin_client;
 mod config;
+mod daemon;
 mod endpoint;
 mod error;
 mod json;
+mod lock;
 mod logging;
+mod shutdown;
 mod version;
 
 use clap::{Parser, Subcommand};
@@ -33,6 +38,12 @@ struct Cli {
 enum Command {
     /// Run the server process
     Run,
+    /// Query the running daemon status
+    Status,
+    /// Check daemon health
+    Healthcheck,
+    /// Ask the running daemon to shut down
+    Shutdown,
 }
 
 fn main() -> ExitCode {
@@ -64,7 +75,29 @@ fn run(cli: Cli) -> Result<(), AppError> {
 
     runtime.block_on(async {
         match cli.command.unwrap_or(Command::Run) {
-            Command::Run => endpoint::run(&config).await.map_err(AppError::Runtime),
+            Command::Run => daemon::run(&config).await.map_err(AppError::Runtime),
+            Command::Status => run_admin(&config, "status").await,
+            Command::Healthcheck => run_admin(&config, "healthcheck").await,
+            Command::Shutdown => run_admin(&config, "shutdown").await,
         }
     })
+}
+
+async fn run_admin(config: &Config, command: &str) -> Result<(), AppError> {
+    let response = admin_client::request(config, command)
+        .await
+        .map_err(AppError::Runtime)?;
+    println!(
+        "{}",
+        serde_json::to_string(&response)
+            .map_err(|error| AppError::Runtime(anyhow::Error::from(error)))?
+    );
+
+    if let Some(error) = response.error {
+        return Err(AppError::Admin {
+            code: error.code,
+            message: error.message,
+        });
+    }
+    Ok(())
 }

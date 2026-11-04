@@ -11,9 +11,13 @@ Last updated: 2026-11-04
 
 ## Status
 
-Completed: Phase 0, Phase 0B, and Phase 1.
+Completed: Phase 0, Phase 0B, Phase 1, and Phase 1B daemon infrastructure
+(instance lock, admin socket, startup/shutdown ordering, and admin tests).
 
-Next: Phase 1B — daemon instance lock and local admin socket.
+Deferred to Phase 2/3: database, migration, media-storage, and whitelist fields
+in admin `status`/`healthcheck`, plus `reload-whitelist`.
+
+Next: Phase 2 — PostgreSQL foundation.
 
 ## Purpose
 
@@ -303,6 +307,8 @@ Implement:
 - Unix-only `flock` instance lock;
 - lock path `/run/aiqiezi/server.lock`;
 - directory `/run/aiqiezi` with restrictive permissions;
+- runtime directory configurable with `AIQIEZI_RUNTIME_DIR`; the development
+  Makefile uses `./data/run` so the daemon runs without root;
 - acquire before database initialization;
 - release automatically on process exit;
 - `migrate` acquires the same lock to verify the daemon is stopped.

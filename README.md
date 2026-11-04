@@ -134,14 +134,28 @@ Server administration uses a local Unix domain socket:
 
 The admin socket is local-only. It is never exposed through iroh or TCP.
 
+The socket and lock file live under `AIQIEZI_RUNTIME_DIR`:
+
+```text
+/run/aiqiezi/admin.sock
+/run/aiqiezi/server.lock
+```
+
+For a manually run development server, the Makefile uses `./data/run` if
+`AIQIEZI_RUNTIME_DIR` is not set.
+
 Inside Docker:
 
 ```bash
 docker compose exec aiqiezi-server aiqiezi-server status
-docker compose exec aiqiezi-server aiqiezi-server client-add <endpoint-id>
-docker compose exec aiqiezi-server aiqiezi-server client-disable <endpoint-id>
 docker compose exec aiqiezi-server aiqiezi-server healthcheck
+docker compose exec aiqiezi-server aiqiezi-server shutdown
 ```
+
+`status`, `healthcheck`, and `shutdown` are implemented. Database, migration,
+media-storage, and whitelist-related fields currently report `not_configured`
+or `database_unavailable` until Phase 2/3. Client whitelist administration is
+also deferred.
 
 The daemon owns all database writes. Client whitelist changes take effect for
 subsequent connections without restarting the daemon.
@@ -177,6 +191,9 @@ Runtime-only files:
 /run/aiqiezi/server.lock
 ```
 
+For local development, set `AIQIEZI_RUNTIME_DIR=./data/run` or let the
+Makefile use that fallback.
+
 The iroh secret key must be backed up. Losing it changes the backend EndpointId
 and requires every client to be reconfigured.
 
@@ -197,6 +214,14 @@ make env       # create .env from .env.example once
 make run       # build and run the server
 ```
 
+While the server is running, use another terminal:
+
+```bash
+make status
+make healthcheck
+make shutdown
+```
+
 Other useful targets: `make help`, `make run-debug`, `make build-static`,
 `make version`, `make fmt`, `make check`, `make test`, `make clippy`, and
 `make ci`.
@@ -209,16 +234,19 @@ make version
 # aiqiezi-server 0.1.0 (build 202611041230)
 ```
 
-Run the Phase 1 server endpoint manually:
+Run the Phase 1B daemon manually:
 
 ```bash
 AIQIEZI_DATABASE_URL='postgres://user:pass@127.0.0.1/aiqiezi' \
+AIQIEZI_RUNTIME_DIR='./data/run' \
   cargo run -p aiqiezi-server -- run
 ```
 
-On first start the server creates `keys/secret_key.bin` and writes
-`keys/endpoint_ticket.txt` under `AIQIEZI_DATA_DIR`. PostgreSQL is not opened
-yet; the database URL is validated but reserved for Phase 2.
+The Makefile does the same and falls back to `./data/run` when
+`AIQIEZI_RUNTIME_DIR` is unset. On first start the server creates
+`keys/secret_key.bin` and writes `keys/endpoint_ticket.txt` under
+`AIQIEZI_DATA_DIR`. PostgreSQL is not opened yet; the database URL is validated
+but reserved for Phase 2.
 
 ## Container image
 
@@ -254,7 +282,7 @@ real ARM deployment target.
 
 ## Status
 
-Phase 1 iroh endpoint implemented:
+Phase 1 and Phase 1B daemon infrastructure implemented:
 
 - persistent EndpointId key and endpoint ticket
 - relay, DNS, and optional bind-address configuration
@@ -262,11 +290,14 @@ Phase 1 iroh endpoint implemented:
 - versioned JSON protocol envelopes in `aiqiezi-proto`
 - JSON Lines `server-info` and `status` commands over
   `/aiqiezi-json/1`
-- unit and in-process iroh transport tests
+- exclusive daemon instance lock
+- local Unix admin socket with restrictive permissions
+- `status`, `healthcheck`, and `shutdown` admin commands
+- in-process transport and lock/admin tests
 
-PostgreSQL, client whitelist enforcement, the local admin socket, media
-storage, and iroh-blobs are not implemented yet. Next phase: Phase 1B daemon
-lock and local admin socket.
+PostgreSQL, client whitelist enforcement, media storage, and iroh-blobs are not
+implemented yet. The admin database/migration/storage fields currently report
+`not_configured`. Next phase: Phase 2 PostgreSQL foundation.
 
 ## Documentation
 
