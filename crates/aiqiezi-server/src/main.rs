@@ -10,6 +10,7 @@ mod endpoint;
 mod error;
 mod json;
 mod logging;
+mod version;
 
 use clap::{Parser, Subcommand};
 use std::process::ExitCode;
@@ -20,7 +21,7 @@ use crate::error::AppError;
 #[derive(Debug, Parser)]
 #[command(
     name = "aiqiezi-server",
-    version,
+    version = crate::version::VERSION,
     about = "aiqiezi photo/video archive server"
 )]
 struct Cli {

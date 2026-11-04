@@ -197,8 +197,17 @@ make env       # create .env from .env.example once
 make run       # build and run the server
 ```
 
-Other useful targets: `make help`, `make run-debug`, `make fmt`, `make check`,
-`make test`, `make clippy`, and `make ci`.
+Other useful targets: `make help`, `make run-debug`, `make build-static`,
+`make version`, `make fmt`, `make check`, `make test`, `make clippy`, and
+`make ci`.
+
+`make build` and `make build-static` set `BUILD_DATE`, which is embedded in
+the binary. Check it with:
+
+```bash
+make version
+# aiqiezi-server 0.1.0 (build 202611041230)
+```
 
 Run the Phase 1 server endpoint manually:
 
@@ -216,10 +225,7 @@ yet; the database URL is validated but reserved for Phase 2.
 The server binary is built outside Docker as a static musl binary:
 
 ```bash
-rustup target add x86_64-unknown-linux-musl
-cargo build --release --target x86_64-unknown-linux-musl
-mkdir -p dist
-cp target/x86_64-unknown-linux-musl/release/aiqiezi-server dist/
+make build-static
 docker build -t gocpicnic/aiqiezi-server:dev .
 ```
 

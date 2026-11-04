@@ -14,6 +14,8 @@ use serde_json::json;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tracing::{debug, warn};
 
+use crate::version;
+
 #[derive(Debug, Clone)]
 pub struct JsonHandler {
     endpoint_id: iroh::EndpointId,
@@ -54,13 +56,15 @@ impl JsonHandler {
         let data = match request.command.as_str() {
             "server-info" => json!({
                 "name": "aiqiezi-server",
-                "version": env!("CARGO_PKG_VERSION"),
+                "version": version::VERSION,
+                "build_date": version::BUILD_DATE,
                 "protocol_version": PROTOCOL_VERSION,
                 "endpoint_id": self.endpoint_id.to_string(),
             }),
             "status" => json!({
                 "name": "aiqiezi-server",
-                "version": env!("CARGO_PKG_VERSION"),
+                "version": version::VERSION,
+                "build_date": version::BUILD_DATE,
                 "protocol_version": PROTOCOL_VERSION,
                 "endpoint_id": self.endpoint_id.to_string(),
                 "uptime_secs": self.started.elapsed().as_secs(),
@@ -157,10 +161,10 @@ mod tests {
         let handler = handler();
         let response = handler.handle_line(&request("server-info"));
         assert!(response.ok);
-        assert_eq!(
-            response.data.unwrap()["endpoint_id"],
-            handler.endpoint_id.to_string()
-        );
+        let data = response.data.unwrap();
+        assert_eq!(data["endpoint_id"], handler.endpoint_id.to_string());
+        assert_eq!(data["version"], crate::version::VERSION);
+        assert_eq!(data["build_date"], crate::version::BUILD_DATE);
     }
 
     #[test]

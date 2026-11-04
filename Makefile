@@ -4,24 +4,30 @@ CARGO ?= cargo
 ENV_FILE ?= .env
 ENV_PATH := $(abspath $(ENV_FILE))
 BIN := target/release/aiqiezi-server
+MUSL_TARGET := x86_64-unknown-linux-musl
+BUILD_DATE := $(shell /bin/date -u +%Y%m%d%H%M)
 
 .DEFAULT_GOAL := help
 
-.PHONY: help env check-env build run run-debug fmt fmt-check check test clippy ci clean
+# Declare all targets as PHONY.
+.PHONY: help env check-env build build-static setup-musl run run-debug version \
+	fmt fmt-check check test clippy ci clean
 
 help:
 	@printf 'Usage:\n'
-	@printf '  make env       Create %s from .env.example if needed\n' "$(ENV_FILE)"
-	@printf '  make build     Build the release server binary\n'
-	@printf '  make run       Build and run the server with %s\n' "$(ENV_FILE)"
-	@printf '  make run-debug Run the server through cargo without release optimization\n'
-	@printf '  make fmt       Format all Rust code\n'
-	@printf '  make fmt-check Check Rust formatting\n'
-	@printf '  make check     Run cargo check for the workspace\n'
-	@printf '  make test      Run all workspace tests\n'
-	@printf '  make clippy    Run clippy with warnings denied\n'
-	@printf '  make ci        Run all checks used by CI\n'
-	@printf '  make clean     Remove build artifacts\n'
+	@printf '  make env          Create %s from .env.example if needed\n' "$(ENV_FILE)"
+	@printf '  make build        Build the release server binary\n'
+	@printf '  make build-static Build the static musl binary into dist/\n'
+	@printf '  make run          Build and run the server with %s\n' "$(ENV_FILE)"
+	@printf '  make run-debug    Run the server through cargo without release optimization\n'
+	@printf '  make version      Print the built server version\n'
+	@printf '  make fmt          Format all Rust code\n'
+	@printf '  make fmt-check    Check Rust formatting\n'
+	@printf '  make check        Run cargo check for the workspace\n'
+	@printf '  make test         Run all workspace tests\n'
+	@printf '  make clippy       Run clippy with warnings denied\n'
+	@printf '  make ci           Run all checks used by CI\n'
+	@printf '  make clean        Remove build artifacts\n'
 
 env:
 	@if [ -f "$(ENV_FILE)" ]; then \
@@ -38,14 +44,27 @@ check-env:
 	fi
 
 build:
-	$(CARGO) build --release --locked -p aiqiezi-server
+	BUILD_DATE="$(BUILD_DATE)" $(CARGO) build --release --locked -p aiqiezi-server
+
+setup-musl:
+	@rustup target list --installed | grep -qx "$(MUSL_TARGET)" || \
+		rustup target add "$(MUSL_TARGET)"
+
+build-static: setup-musl
+	BUILD_DATE="$(BUILD_DATE)" $(CARGO) build --release --locked \
+		--target "$(MUSL_TARGET)" -p aiqiezi-server
+	mkdir -p dist
+	cp "target/$(MUSL_TARGET)/release/aiqiezi-server" dist/aiqiezi-server
 
 run: check-env build
 	@set -a; . "$(ENV_PATH)"; set +a; exec "./$(BIN)" run
 
 run-debug: check-env
 	@set -a; . "$(ENV_PATH)"; set +a; \
-		exec $(CARGO) run -p aiqiezi-server -- run
+		BUILD_DATE="$(BUILD_DATE)" exec $(CARGO) run -p aiqiezi-server -- run
+
+version: build
+	@./$(BIN) --version
 
 fmt:
 	$(CARGO) fmt --all
