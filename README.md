@@ -1,7 +1,11 @@
 # aiqiezi-server
 
-A durable, searchable, single-backend archive for large photo and video
-collections that grow over many years.
+Self-hosted server for managing large personal photo and video collections.
+
+Like PhotoPrism and Immich, it is built for self-hosted photo libraries, but
+aiqiezi is built on iroh, with iroh-blobs providing native resumable uploads
+and downloads. Users can access the server over the network without a static
+IP, public domain name, port forwarding, or reverse proxy.
 
 ## Why iroh
 
