@@ -36,9 +36,13 @@ Asset ID:           UUID
 Search:             PostgreSQL FTS + jieba-rs + pg_trgm
 Media storage:      content-addressed filesystem
 Deployment:         Docker Compose
+Server build:       x86_64-unknown-linux-musl, built outside Docker
+Server runtime:     distroless/static, package-only Dockerfile
+Container user:     runtime UID/GID, no fixed image user ID
 Server network:     host network
 PostgreSQL network: private bridge, 127.0.0.1:5432
 Data directory:     /mnt/data/aiqiezi
+Initial platforms:  linux/amd64 only
 ```
 
 ## Working rules
@@ -505,15 +509,37 @@ insufficient.
 The production target is the owner's self-hosted server, behind NAT. GitHub
 Actions publishes images; the server pulls explicit versions.
 
-### Step 7.1 — Server image
+### Step 7.1 — Server binary and image
 
-Implement a multi-stage Dockerfile:
+Build the server binary outside Docker:
 
-- Rust build;
-- Debian slim runtime;
-- non-root UID 1000;
+```bash
+rustup target add x86_64-unknown-linux-musl
+cargo build --release --target x86_64-unknown-linux-musl
+mkdir -p dist
+cp target/x86_64-unknown-linux-musl/release/aiqiezi-server dist/
+```
+
+Package it with a distroless, package-only Dockerfile:
+
+```dockerfile
+FROM gcr.io/distroless/static-debian12:nonroot
+
+COPY dist/aiqiezi-server /usr/local/bin/aiqiezi-server
+
+ENTRYPOINT ["/usr/local/bin/aiqiezi-server"]
+```
+
+Requirements:
+
+- no Rust build inside the image;
+- no shell;
+- distroless provides CA certificates;
+- default non-root user;
+- no fixed host UID in the image;
+- runtime UID/GID comes from Compose;
 - no HTTP port;
-- optional ffmpeg/ffprobe later.
+- no ffmpeg/ffprobe in this image.
 
 The image must contain the server binary and the operational subcommands:
 
@@ -522,6 +548,12 @@ aiqiezi-server migrate
 aiqiezi-server migrate-status
 aiqiezi-server healthcheck
 ```
+
+The initial platform is `linux/amd64` only. ARM64 is deferred until there is a
+real ARM target; when needed, use a native ARM64 build runner rather than QEMU
+emulation.
+
+FFmpeg and video processing will live in a separate media-worker image later.
 
 ### Step 7.2 — Compose stack
 
@@ -535,6 +567,14 @@ postgres
 Requirements:
 
 - server uses host networking;
+- server image is `ghcr.io/gocpicnic/aiqiezi-server:<version>`;
+- server user is supplied at runtime:
+
+```yaml
+user: "${AIQIEZI_UID:-65532}:${AIQIEZI_GID:-65532}"
+```
+
+- host data directories must be owned by that runtime UID/GID;
 - PostgreSQL uses a private bridge network;
 - PostgreSQL binds to `127.0.0.1:5432`;
 - persistent data under `/mnt/data/aiqiezi`;
@@ -623,12 +663,24 @@ ghcr.io/gocpicnic/aiqiezi-server:latest
 ghcr.io/gocpicnic/aiqiezi-server:sha-<commit>
 ```
 
+Build flow:
+
+```text
+1. GitHub Actions runner (linux/amd64)
+2. cargo build --release --target x86_64-unknown-linux-musl
+3. copy binary to dist/
+4. docker build (package-only distroless image)
+5. docker push to GHCR for main/version tags
+```
+
 Requirements:
 
 - pull requests build but do not push;
 - main builds and may push `main` and `sha-*` tags;
 - version tags create GitHub Releases;
 - use `GITHUB_TOKEN` with least privilege;
+- no QEMU-based ARM builds initially;
+- ARM64 support, when needed, uses a native ARM64 runner in a build matrix;
 - require approval for production deployment.
 
 ### Step 7.7 — systemd backup and health timers

@@ -123,6 +123,28 @@ sqlx migrate run
 cargo run -p aiqiezi-server
 ```
 
+## Container image
+
+The planned server image is built from a static musl binary compiled outside
+Docker, then packaged with a distroless base:
+
+```bash
+rustup target add x86_64-unknown-linux-musl
+cargo build --release --target x86_64-unknown-linux-musl
+mkdir -p dist
+cp target/x86_64-unknown-linux-musl/release/aiqiezi-server dist/
+docker build -t gocpicnic/aiqiezi-server:dev .
+```
+
+The runtime user is supplied by Compose rather than fixed in the image:
+
+```yaml
+user: "${AIQIEZI_UID:-65532}:${AIQIEZI_GID:-65532}"
+```
+
+Initial target is `linux/amd64`. ARM64 support is deferred until there is a
+real ARM deployment target.
+
 ## Status
 
 Early design phase. The workspace, server, protocol, and database schema are
