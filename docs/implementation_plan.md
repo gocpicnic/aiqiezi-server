@@ -852,4 +852,12 @@ After this phase, begin the CLI repository work.
 
 ## Current status
 
-Design phase. Step 0.1 has not started yet.
+Phase 0 foundation implemented:
+
+- Step 0.1 — workspace scaffold complete
+- Step 0.2 — repository metadata complete
+- Step 0.3 — configuration module complete
+- Step 0.4 — error and logging skeleton complete
+
+Database, iroh, and protocol work have not started. Next: Phase 0B CI
+foundation.

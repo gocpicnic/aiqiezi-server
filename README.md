@@ -116,15 +116,18 @@ and requires every client to be reconfigured.
 
 ## Development
 
-Planned commands once the workspace is scaffolded:
-
 ```bash
 cargo check --workspace
 cargo test --workspace
 cargo fmt --all
 cargo clippy --workspace --all-targets -- -D warnings
-sqlx migrate run
-cargo run -p aiqiezi-server
+```
+
+Run the Phase 0 server skeleton:
+
+```bash
+AIQIEZI_DATABASE_URL='postgres://user:pass@127.0.0.1/aiqiezi' \
+  cargo run -p aiqiezi-server -- run
 ```
 
 ## Container image
@@ -164,8 +167,15 @@ real ARM deployment target.
 
 ## Status
 
-Early design phase. The workspace, server, protocol, and database schema are
-not implemented yet.
+Phase 0 foundation implemented:
+
+- Cargo workspace and protocol crate
+- configuration loading
+- structured logging
+- `run` command skeleton
+
+PostgreSQL, iroh, protocol handlers, and media storage are not implemented yet.
+Next phase: CI foundation.
 
 ## Documentation
 

@@ -1,0 +1,14 @@
+[package]
+name = "aiqiezi-server"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0"
+description = "Single-backend photo and video archive server"
+repository = "https://github.com/gocpicnic/aiqiezi-server"
+
+[dependencies]
+aiqiezi-proto = { path = "../aiqiezi-proto" }
+clap = { version = "4", features = ["derive"] }
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }

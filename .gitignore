@@ -1,0 +1,11 @@
+target/
+dist/
+data/
+media/
+postgres/
+keys/
+backups/
+logs/
+.env
+*.log
+.DS_Store
