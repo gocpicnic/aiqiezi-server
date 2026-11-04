@@ -189,7 +189,18 @@ cargo fmt --all
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-Run the Phase 1 server endpoint:
+Or use the Makefile:
+
+```bash
+make env       # create .env from .env.example once
+# edit .env with your data directory and database URL
+make run       # build and run the server
+```
+
+Other useful targets: `make help`, `make run-debug`, `make fmt`, `make check`,
+`make test`, `make clippy`, and `make ci`.
+
+Run the Phase 1 server endpoint manually:
 
 ```bash
 AIQIEZI_DATABASE_URL='postgres://user:pass@127.0.0.1/aiqiezi' \
