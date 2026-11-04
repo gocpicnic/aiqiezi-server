@@ -16,4 +16,7 @@ pub enum AppError {
 
     #[error("logging initialization failed: {0}")]
     Logging(String),
+
+    #[error("runtime error: {0:#}")]
+    Runtime(#[from] anyhow::Error),
 }

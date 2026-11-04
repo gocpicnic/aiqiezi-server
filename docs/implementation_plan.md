@@ -9,6 +9,12 @@
 
 Last updated: 2026-11-04
 
+## Status
+
+Completed: Phase 0, Phase 0B, and Phase 1.
+
+Next: Phase 1B — daemon instance lock and local admin socket.
+
 ## Purpose
 
 Build `aiqiezi-server` as the single backend for a long-term, self-hosted

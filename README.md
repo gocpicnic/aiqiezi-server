@@ -189,12 +189,16 @@ cargo fmt --all
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-Run the Phase 0 server skeleton:
+Run the Phase 1 server endpoint:
 
 ```bash
 AIQIEZI_DATABASE_URL='postgres://user:pass@127.0.0.1/aiqiezi' \
   cargo run -p aiqiezi-server -- run
 ```
+
+On first start the server creates `keys/secret_key.bin` and writes
+`keys/endpoint_ticket.txt` under `AIQIEZI_DATA_DIR`. PostgreSQL is not opened
+yet; the database URL is validated but reserved for Phase 2.
 
 ## Container image
 
@@ -233,15 +237,19 @@ real ARM deployment target.
 
 ## Status
 
-Phase 0 foundation implemented:
+Phase 1 iroh endpoint implemented:
 
-- Cargo workspace and protocol crate
-- configuration loading
-- structured logging
-- `run` command skeleton
+- persistent EndpointId key and endpoint ticket
+- relay, DNS, and optional bind-address configuration
+- SIGINT/SIGTERM shutdown with router and endpoint cleanup
+- versioned JSON protocol envelopes in `aiqiezi-proto`
+- JSON Lines `server-info` and `status` commands over
+  `/aiqiezi-json/1`
+- unit and in-process iroh transport tests
 
-PostgreSQL, iroh, protocol handlers, and media storage are not implemented yet.
-Next phase: CI foundation.
+PostgreSQL, client whitelist enforcement, the local admin socket, media
+storage, and iroh-blobs are not implemented yet. Next phase: Phase 1B daemon
+lock and local admin socket.
 
 ## Documentation
 

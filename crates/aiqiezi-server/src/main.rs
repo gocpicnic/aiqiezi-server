@@ -6,7 +6,9 @@
 */
 
 mod config;
+mod endpoint;
 mod error;
+mod json;
 mod logging;
 
 use clap::{Parser, Subcommand};
@@ -48,17 +50,20 @@ fn run(cli: Cli) -> Result<(), AppError> {
     let config = Config::from_env()?;
     logging::init(&config.log_level).map_err(AppError::Logging)?;
 
-    match cli.command.unwrap_or(Command::Run) {
-        Command::Run => run_server(&config),
-    }
-}
-
-fn run_server(config: &Config) -> Result<(), AppError> {
     tracing::info!(
         data_dir = %config.data_dir.display(),
         auto_migrate = config.auto_migrate,
         "configuration loaded"
     );
-    tracing::info!("phase 0 foundation ready; database and iroh are not started");
-    Ok(())
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .map_err(|error| AppError::Runtime(anyhow::Error::from(error)))?;
+
+    runtime.block_on(async {
+        match cli.command.unwrap_or(Command::Run) {
+            Command::Run => endpoint::run(&config).await.map_err(AppError::Runtime),
+        }
+    })
 }
