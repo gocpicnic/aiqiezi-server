@@ -6,6 +6,7 @@ postgres/
 keys/
 backups/
 logs/
+imagefiles/
 .env
 *.log
 .DS_Store

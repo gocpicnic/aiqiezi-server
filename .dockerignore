@@ -1,0 +1,16 @@
+.git
+.gitignore
+.env
+*.log
+
+target
+data
+media
+keys
+backups
+logs
+imagefiles
+
+# Keep only the static server binary from dist/.
+dist/*
+!dist/aiqiezi-server

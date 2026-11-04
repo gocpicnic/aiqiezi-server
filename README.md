@@ -152,6 +152,9 @@ docker compose exec aiqiezi-server aiqiezi-server healthcheck
 docker compose exec aiqiezi-server aiqiezi-server shutdown
 ```
 
+`shutdown` exits the process; with the Compose restart policy Docker may start
+it again. Use `docker compose stop aiqiezi-server` when it should stay stopped.
+
 `status`, `healthcheck`, and `shutdown` are implemented. Database, migration,
 media-storage, and whitelist-related fields currently report `not_configured`
 or `database_unavailable` until Phase 2/3. Client whitelist administration is
@@ -254,8 +257,18 @@ The server binary is built outside Docker as a static musl binary:
 
 ```bash
 make build-static
-docker build -t gocpicnic/aiqiezi-server:dev .
+make docker-image IMAGE_TAG=v0.1.0
+make docker-push IMAGE_TAG=v0.1.0
 ```
+
+The image is published to:
+
+```text
+ghcr.io/gocpicnic/aiqiezi-server:v0.1.0
+```
+
+Use `make docker-save IMAGE_TAG=v0.1.0` when the remote server cannot pull
+from GHCR.
 
 The runtime image uses Debian slim because the container entrypoint needs a
 shell, `tini`, and `gosu`. Rust compilation still happens outside Docker.
@@ -280,6 +293,10 @@ is required. The entrypoint never touches PostgreSQL data.
 Initial target is `linux/amd64`. ARM64 support is deferred until there is a
 real ARM deployment target.
 
+Production Compose instructions are in [deploy/README.md](deploy/README.md).
+The stack uses host networking for the server, a private bridge for PostgreSQL,
+and mounts only the media, keys, and config directories into the app container.
+
 ## Status
 
 Phase 1 and Phase 1B daemon infrastructure implemented:
@@ -293,6 +310,7 @@ Phase 1 and Phase 1B daemon infrastructure implemented:
 - exclusive daemon instance lock
 - local Unix admin socket with restrictive permissions
 - `status`, `healthcheck`, and `shutdown` admin commands
+- Docker runtime image, Compose stack, and production deployment guide
 - in-process transport and lock/admin tests
 
 PostgreSQL, client whitelist enforcement, media storage, and iroh-blobs are not
@@ -304,6 +322,7 @@ implemented yet. The admin database/migration/storage fields currently report
 - [AGENTS.md](AGENTS.md): implementation rules for AI coding agents
 - [SECURITY.md](SECURITY.md): vulnerability reporting policy
 - [docs/implementation_plan.md](docs/implementation_plan.md): staged server implementation plan
+- [deploy/README.md](deploy/README.md): production Docker Compose deployment
 - [docs/branch-protection.md](docs/branch-protection.md): repository branch protection
 - `docs/architecture.md`: deeper architecture notes
 - `docs/protocol.md`: iroh JSON command definitions

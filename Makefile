@@ -7,18 +7,27 @@ BIN := target/release/aiqiezi-server
 MUSL_TARGET := x86_64-unknown-linux-musl
 BUILD_DATE := $(shell /bin/date -u +%Y%m%d%H%M)
 RUNTIME_DIR ?= ./data/run
+IMAGE_REPO ?= ghcr.io/gocpicnic/aiqiezi-server
+IMAGE_TAG ?= dev
+DOCKER_PLATFORM ?= linux/amd64
+IMAGE_TAR_DIR ?= imagefiles
+IMAGE := $(IMAGE_REPO):$(IMAGE_TAG)
 
 .DEFAULT_GOAL := help
 
 # Declare all targets as PHONY.
 .PHONY: help env check-env build build-static setup-musl run run-debug version \
-	status healthcheck shutdown fmt fmt-check check test clippy ci clean
+	status healthcheck shutdown docker-image docker-push docker-save \
+	fmt fmt-check check test clippy ci clean
 
 help:
 	@printf 'Usage:\n'
 	@printf '  make env          Create %s from .env.example if needed\n' "$(ENV_FILE)"
 	@printf '  make build        Build the release server binary\n'
 	@printf '  make build-static Build the static musl binary into dist/\n'
+	@printf '  make docker-image Build the server image (IMAGE_TAG required for releases)\n'
+	@printf '  make docker-push  Push the server image to $(IMAGE_REPO)\n'
+	@printf '  make docker-save  Save the server image tar into imagefiles/\n'
 	@printf '  make run          Build and run the server with %s\n' "$(ENV_FILE)"
 	@printf '  make run-debug    Run the server through cargo without release optimization\n'
 	@printf '  make status       Query the running daemon status\n'
@@ -59,6 +68,16 @@ build-static: setup-musl
 		--target "$(MUSL_TARGET)" -p aiqiezi-server
 	mkdir -p dist
 	cp "target/$(MUSL_TARGET)/release/aiqiezi-server" dist/aiqiezi-server
+
+docker-image: build-static
+	docker build --platform "$(DOCKER_PLATFORM)" -t "$(IMAGE)" .
+
+docker-push: docker-image
+	docker push "$(IMAGE)"
+
+docker-save: docker-image
+	mkdir -p "$(IMAGE_TAR_DIR)"
+	docker save -o "$(IMAGE_TAR_DIR)/aiqiezi-server-$(IMAGE_TAG).tar" "$(IMAGE)"
 
 run: check-env build
 	@set -a; . "$(ENV_PATH)"; set +a; \
