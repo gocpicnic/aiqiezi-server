@@ -1061,5 +1061,12 @@ Phase 0 foundation implemented:
 - Step 0.3 — configuration module complete
 - Step 0.4 — error and logging skeleton complete
 
-Database, iroh, and protocol work have not started. Next: Phase 0B CI
-foundation.
+Phase 0B CI foundation implemented:
+
+- Step 0B.1 — base CI workflow complete
+- Step 0B.2 — Dependabot and security documentation complete
+- Step 0B.3 — branch protection helper and documentation complete; applying
+  branch protection requires a repository administrator
+
+Database, iroh, and protocol work have not started. Next: Phase 1 iroh
+endpoint.

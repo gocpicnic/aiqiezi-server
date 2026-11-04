@@ -1,5 +1,7 @@
 # aiqiezi-server
 
+[![CI](https://github.com/gocpicnic/aiqiezi-server/actions/workflows/ci.yml/badge.svg)](https://github.com/gocpicnic/aiqiezi-server/actions/workflows/ci.yml)
+
 Self-hosted server for managing large personal photo and video collections.
 
 Like [PhotoPrism](https://github.com/photoprism/photoprism) and
@@ -244,7 +246,9 @@ Next phase: CI foundation.
 ## Documentation
 
 - [AGENTS.md](AGENTS.md): implementation rules for AI coding agents
+- [SECURITY.md](SECURITY.md): vulnerability reporting policy
 - [docs/implementation_plan.md](docs/implementation_plan.md): staged server implementation plan
+- [docs/branch-protection.md](docs/branch-protection.md): repository branch protection
 - `docs/architecture.md`: deeper architecture notes
 - `docs/protocol.md`: iroh JSON command definitions
 - `docs/database.md`: schema and migration notes
