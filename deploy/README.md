@@ -16,30 +16,38 @@ not use it yet.
 Build the static binary and image on a development machine:
 
 ```bash
-make build-static
-make docker-image IMAGE_TAG=v0.1.0
-make docker-push IMAGE_TAG=v0.1.0
+make docker-push APP_VERSION=v0.1.0
 ```
 
-The image is published as:
+The image tag includes the current UTC build timestamp, for example:
 
 ```text
-ghcr.io/gocpicnic/aiqiezi-server:v0.1.0
+ghcr.io/gocpicnic/aiqiezi-server:v0.1.0-20261104123045
 ```
 
-Never deploy `latest` to production.
+Record the exact tag printed by the build and use it as `AIQIEZI_TAG` in the
+production `.env`. Never deploy `latest` to production.
+
+To build without pushing and push later, pass the exact tag explicitly:
+
+```bash
+make docker-image APP_VERSION=v0.1.0
+# copy the printed tag
+make docker-push IMAGE_TAG=v0.1.0-20261104123045
+```
 
 If the server cannot pull from GHCR, save and copy the image instead:
 
 ```bash
-make docker-save IMAGE_TAG=v0.1.0
-scp imagefiles/aiqiezi-server-v0.1.0.tar user@server:/tmp/
+make docker-save APP_VERSION=v0.1.0
+# copy the exact generated tag from the output
+scp imagefiles/aiqiezi-server-v0.1.0-20261104123045.tar user@server:/tmp/
 ```
 
 On the remote server:
 
 ```bash
-docker load -i /tmp/aiqiezi-server-v0.1.0.tar
+docker load -i /tmp/aiqiezi-server-v0.1.0-20261104123045.tar
 ```
 
 ## Deploy on the remote server
@@ -69,8 +77,10 @@ AIQIEZI_DATABASE_URL
 POSTGRES_PASSWORD
 ```
 
-The PostgreSQL password must match `AIQIEZI_DATABASE_URL`. Use a URL-safe
-password or percent-encode it in the URL.
+`AIQIEZI_TAG` must be the exact tag printed by `make docker-push` or
+`make docker-save`, including the timestamp suffix. The PostgreSQL password
+must match `AIQIEZI_DATABASE_URL`. Use a URL-safe password or percent-encode it
+in the URL.
 
 If using GHCR:
 
@@ -118,10 +128,10 @@ not exposed over TCP or iroh.
 
 ## Update and rollback
 
-Use an explicit version tag for every deployment:
+Use the exact dated image tag for every deployment:
 
 ```bash
-# edit AIQIEZI_TAG in .env
+# set AIQIEZI_TAG in .env to the new vX.Y.Z-YYYYMMDDHHMMSS tag
 docker compose pull aiqiezi-server
 docker compose up -d aiqiezi-server
 ```

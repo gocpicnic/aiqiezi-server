@@ -234,7 +234,7 @@ the binary. Check it with:
 
 ```bash
 make version
-# aiqiezi-server 0.1.0 (build 202611041230)
+# aiqiezi-server 0.1.0 (build 20261104123045)
 ```
 
 Run the Phase 1B daemon manually:
@@ -256,18 +256,18 @@ but reserved for Phase 2.
 The server binary is built outside Docker as a static musl binary:
 
 ```bash
-make build-static
-make docker-image IMAGE_TAG=v0.1.0
-make docker-push IMAGE_TAG=v0.1.0
+make docker-push APP_VERSION=v0.1.0
 ```
 
-The image is published to:
+The build prints the exact immutable tag, for example:
 
 ```text
-ghcr.io/gocpicnic/aiqiezi-server:v0.1.0
+ghcr.io/gocpicnic/aiqiezi-server:v0.1.0-20261104123045
 ```
 
-Use `make docker-save IMAGE_TAG=v0.1.0` when the remote server cannot pull
+Use that exact tag in the production `AIQIEZI_TAG`.
+
+Use `make docker-save APP_VERSION=v0.1.0` when the remote server cannot pull
 from GHCR.
 
 The runtime image uses Debian slim because the container entrypoint needs a

@@ -5,10 +5,11 @@ ENV_FILE ?= .env
 ENV_PATH := $(abspath $(ENV_FILE))
 BIN := target/release/aiqiezi-server
 MUSL_TARGET := x86_64-unknown-linux-musl
-BUILD_DATE := $(shell /bin/date -u +%Y%m%d%H%M)
+BUILD_DATE := $(shell /bin/date -u +%Y%m%d%H%M%S)
 RUNTIME_DIR ?= ./data/run
 IMAGE_REPO ?= ghcr.io/gocpicnic/aiqiezi-server
-IMAGE_TAG ?= dev
+APP_VERSION ?= dev
+IMAGE_TAG ?= $(APP_VERSION)-$(BUILD_DATE)
 DOCKER_PLATFORM ?= linux/amd64
 IMAGE_TAR_DIR ?= imagefiles
 IMAGE := $(IMAGE_REPO):$(IMAGE_TAG)
@@ -25,9 +26,9 @@ help:
 	@printf '  make env          Create %s from .env.example if needed\n' "$(ENV_FILE)"
 	@printf '  make build        Build the release server binary\n'
 	@printf '  make build-static Build the static musl binary into dist/\n'
-	@printf '  make docker-image Build the server image (IMAGE_TAG required for releases)\n'
-	@printf '  make docker-push  Push the server image to $(IMAGE_REPO)\n'
-	@printf '  make docker-save  Save the server image tar into imagefiles/\n'
+	@printf '  make docker-image Build the server image (set APP_VERSION=vX.Y.Z)\n'
+	@printf '  make docker-push  Build and push the server image to $(IMAGE_REPO)\n'
+	@printf '  make docker-save  Build and save the server image tar into imagefiles/\n'
 	@printf '  make run          Build and run the server with %s\n' "$(ENV_FILE)"
 	@printf '  make run-debug    Run the server through cargo without release optimization\n'
 	@printf '  make status       Query the running daemon status\n'
@@ -70,6 +71,7 @@ build-static: setup-musl
 	cp "target/$(MUSL_TARGET)/release/aiqiezi-server" dist/aiqiezi-server
 
 docker-image: build-static
+	@printf 'Building image: %s\n' "$(IMAGE)"
 	docker build --platform "$(DOCKER_PLATFORM)" -t "$(IMAGE)" .
 
 docker-push: docker-image

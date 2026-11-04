@@ -15,8 +15,9 @@ Completed: Phase 0, Phase 0B, Phase 1, and Phase 1B daemon infrastructure
 (instance lock, admin socket, startup/shutdown ordering, and admin tests).
 
 Docker runtime image, Compose stack, entrypoint, and manual build/push/save
-workflow are implemented ahead of the main phase order. CI image publishing is
-still deferred.
+workflow are implemented ahead of the main phase order. Docker image tags use
+`vX.Y.Z-YYYYMMDDHHMMSS` (UTC build timestamp); CI image publishing is still
+deferred.
 
 Deferred to Phase 2/3: database, migration, media-storage, and whitelist fields
 in admin `status`/`healthcheck`, plus `reload-whitelist`.
