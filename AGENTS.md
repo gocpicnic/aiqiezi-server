@@ -32,6 +32,9 @@ Mandatory constraints:
 - iroh-blobs is the media transport;
 - clients are authorized by an iroh EndpointId whitelist;
 - there is no login, password, or session-token flow;
+- there is one daemon process with a public iroh listener and a local Unix
+  admin socket;
+- admin commands are local-only and never exposed through iroh or TCP;
 - the backend is the single source of truth;
 - the GUI is deferred until the CLI/server are functional.
 
@@ -140,6 +143,22 @@ create table clients (
 - The server process must never run as root.
 - Never chown or touch PostgreSQL data from the server entrypoint.
 - Do not require a setup-host script for normal Compose startup.
+
+## Daemon process and admin control
+
+- Run one daemon process with two listeners:
+  - public iroh endpoint for clients;
+  - local Unix admin socket for server commands.
+- Admin socket path: `/run/aiqiezi/admin.sock`.
+- Instance lock path: `/run/aiqiezi/server.lock`.
+- Admin socket permissions must be restrictive; never expose it over TCP or
+  iroh.
+- Admin requests use JSON Lines, one request per connection.
+- The daemon owns database writes and updates the whitelist cache immediately.
+- `migrate` and `migrate-status` are one-shot commands outside the daemon and
+  must hold the same instance lock.
+- Do not run two daemon processes against the same PostgreSQL database or media
+  store.
 
 ## Protocol rules
 

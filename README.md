@@ -49,13 +49,29 @@ Unless explicitly added later:
 ```text
 CLI / GUI
     |
-    | iroh JSON + iroh-blobs
+    | public iroh endpoint
+    | JSON + iroh-blobs
     v
-aiqiezi-server
+aiqiezi-server daemon
     |
     +-- PostgreSQL: metadata only
     +-- content-addressed media storage: photos/videos
+
+server admin CLI
+    |
+    | /run/aiqiezi/admin.sock
+    v
+same aiqiezi-server daemon
 ```
+
+There is one daemon process with two listeners:
+
+- a public iroh endpoint for clients;
+- a local Unix admin socket for server commands.
+
+Both listeners share the same database pool, media storage, whitelist cache,
+and shutdown coordinator. Do not run two daemon processes against the same
+database and media store.
 
 The server is the single source of truth. Clients never access PostgreSQL or
 the server filesystem directly.
@@ -64,9 +80,11 @@ the server filesystem directly.
 
 - **PostgreSQL**: metadata, folders, tags, search indexes, client whitelist.
 - **Media storage**: photos and videos in a content-addressed tree.
-- **iroh JSON**: control and metadata commands.
+- **iroh JSON**: client control and metadata commands.
 - **iroh-blobs**: media upload and download.
 - **Whitelist**: authorization by client EndpointId.
+- **Admin socket**: local-only server commands over a Unix domain socket.
+- **Instance lock**: prevents two daemons from sharing one data directory.
 
 ## Security model
 
@@ -97,6 +115,38 @@ Initial blob access is a trusted-whitelist model: any whitelisted client may
 fetch any blob if it knows the content hash. Per-asset ACLs are deferred until
 multi-user access is required.
 
+## Administration
+
+Server administration uses a local Unix domain socket:
+
+```text
+/run/aiqiezi/admin.sock
+```
+
+The admin socket is local-only. It is never exposed through iroh or TCP.
+
+Inside Docker:
+
+```bash
+docker compose exec aiqiezi-server aiqiezi-server status
+docker compose exec aiqiezi-server aiqiezi-server client-add <endpoint-id>
+docker compose exec aiqiezi-server aiqiezi-server client-disable <endpoint-id>
+docker compose exec aiqiezi-server aiqiezi-server healthcheck
+```
+
+The daemon owns all database writes. Client whitelist changes take effect for
+subsequent connections without restarting the daemon.
+
+Migrations are a one-shot operation outside the running daemon:
+
+```bash
+docker compose stop aiqiezi-server
+docker compose run --rm aiqiezi-server aiqiezi-server migrate
+docker compose up -d aiqiezi-server
+```
+
+The daemon refuses to start when migrations are pending.
+
 ## Data layout
 
 Production data lives outside the repository:
@@ -109,6 +159,13 @@ Production data lives outside the repository:
 ├── config/
 ├── backups/
 └── logs/
+```
+
+Runtime-only files:
+
+```text
+/run/aiqiezi/admin.sock
+/run/aiqiezi/server.lock
 ```
 
 The iroh secret key must be backed up. Losing it changes the backend EndpointId
