@@ -127,6 +127,20 @@ create table clients (
 - Protect current data from garbage collection.
 - Test restore, not just backup.
 
+## Container startup rules
+
+- Server binary is compiled outside Docker for
+  `x86_64-unknown-linux-musl`.
+- Runtime image is Debian slim with `tini` and `gosu`; Rust is not built in
+  the image.
+- The entrypoint starts as root only for initialization.
+- The entrypoint creates and chowns only app-owned directories.
+- The entrypoint drops privileges to `AIQIEZI_UID:AIQIEZI_GID`.
+- Default runtime UID/GID is `1000:1000`; operators can override it.
+- The server process must never run as root.
+- Never chown or touch PostgreSQL data from the server entrypoint.
+- Do not require a setup-host script for normal Compose startup.
+
 ## Protocol rules
 
 - ALPN_AIQIEZI_JSON is the control and metadata transport.
@@ -146,7 +160,8 @@ create table clients (
 - Never commit keys, relay tokens, database dumps, or media.
 - Keep authorization separate from transport encryption.
 - Keep PostgreSQL off the public network.
-- Run the server as a dedicated non-root user.
+- Run the application process as a non-root user; root is allowed only in the
+  short-lived container entrypoint initialization.
 - Use minimum filesystem permissions.
 - Use least-privilege database roles.
 - Keep relay tokens and database credentials in environment or secret files.

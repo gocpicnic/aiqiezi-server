@@ -37,8 +37,10 @@ Search:             PostgreSQL FTS + jieba-rs + pg_trgm
 Media storage:      content-addressed filesystem
 Deployment:         Docker Compose
 Server build:       x86_64-unknown-linux-musl, built outside Docker
-Server runtime:     distroless/static, package-only Dockerfile
-Container user:     runtime UID/GID, no fixed image user ID
+Server runtime:     Debian slim + tini + gosu entrypoint
+Container user:     AIQIEZI_UID/AIQIEZI_GID, default 1000:1000
+Container startup:  root entrypoint initializes and drops privileges
+Setup script:       not required; compose.yaml + .env only
 Server network:     host network
 PostgreSQL network: private bridge, 127.0.0.1:5432
 Data directory:     /mnt/data/aiqiezi
@@ -520,24 +522,40 @@ mkdir -p dist
 cp target/x86_64-unknown-linux-musl/release/aiqiezi-server dist/
 ```
 
-Package it with a distroless, package-only Dockerfile:
+Package it with a Debian slim runtime image:
 
 ```dockerfile
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM debian:bookworm-slim
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       ca-certificates tini gosu \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY dist/aiqiezi-server /usr/local/bin/aiqiezi-server
+COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 
-ENTRYPOINT ["/usr/local/bin/aiqiezi-server"]
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
+CMD ["run"]
+```
+
+The entrypoint:
+
+```text
+1. Reads AIQIEZI_UID and AIQIEZI_GID (default 1000:1000).
+2. Creates app-owned data directories.
+3. Chowns only the app-owned directories.
+4. Drops privileges with gosu.
+5. Executes the server as the selected UID/GID.
 ```
 
 Requirements:
 
 - no Rust build inside the image;
-- no shell;
-- distroless provides CA certificates;
-- default non-root user;
-- no fixed host UID in the image;
-- runtime UID/GID comes from Compose;
+- no fixed host UID baked into the image;
+- server process never runs as root;
+- entrypoint never touches PostgreSQL data;
+- no setup-host script required;
 - no HTTP port;
 - no ffmpeg/ffprobe in this image.
 
@@ -568,13 +586,16 @@ Requirements:
 
 - server uses host networking;
 - server image is `ghcr.io/gocpicnic/aiqiezi-server:<version>`;
-- server user is supplied at runtime:
+- runtime UID/GID is supplied by environment:
 
 ```yaml
-user: "${AIQIEZI_UID:-65532}:${AIQIEZI_GID:-65532}"
+environment:
+  AIQIEZI_UID: "${AIQIEZI_UID:-1000}"
+  AIQIEZI_GID: "${AIQIEZI_GID:-1000}"
 ```
 
-- host data directories must be owned by that runtime UID/GID;
+- the entrypoint creates and chowns only app-owned directories;
+- host data directories do not need a separate setup script;
 - PostgreSQL uses a private bridge network;
 - PostgreSQL binds to `127.0.0.1:5432`;
 - persistent data under `/mnt/data/aiqiezi`;
@@ -669,7 +690,7 @@ Build flow:
 1. GitHub Actions runner (linux/amd64)
 2. cargo build --release --target x86_64-unknown-linux-musl
 3. copy binary to dist/
-4. docker build (package-only distroless image)
+4. docker build (Debian slim runtime + entrypoint)
 5. docker push to GHCR for main/version tags
 ```
 

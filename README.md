@@ -125,8 +125,7 @@ cargo run -p aiqiezi-server
 
 ## Container image
 
-The planned server image is built from a static musl binary compiled outside
-Docker, then packaged with a distroless base:
+The server binary is built outside Docker as a static musl binary:
 
 ```bash
 rustup target add x86_64-unknown-linux-musl
@@ -136,11 +135,25 @@ cp target/x86_64-unknown-linux-musl/release/aiqiezi-server dist/
 docker build -t gocpicnic/aiqiezi-server:dev .
 ```
 
-The runtime user is supplied by Compose rather than fixed in the image:
+The runtime image uses Debian slim because the container entrypoint needs a
+shell, `tini`, and `gosu`. Rust compilation still happens outside Docker.
 
-```yaml
-user: "${AIQIEZI_UID:-65532}:${AIQIEZI_GID:-65532}"
+The entrypoint starts as root only long enough to:
+
+1. create the app-owned data directories,
+2. change ownership of those directories,
+3. drop privileges,
+4. start the server as `AIQIEZI_UID:AIQIEZI_GID`.
+
+Default UID/GID:
+
+```text
+AIQIEZI_UID=1000
+AIQIEZI_GID=1000
 ```
+
+Users with a different host UID/GID set these values in `.env`. No setup script
+is required. The entrypoint never touches PostgreSQL data.
 
 Initial target is `linux/amd64`. ARM64 support is deferred until there is a
 real ARM deployment target.
