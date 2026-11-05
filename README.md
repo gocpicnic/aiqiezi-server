@@ -32,7 +32,10 @@ This is the primary architectural difference from HTTP-first photo servers.
 ## Target deployment
 
 - single backend;
-- home server, NAS, or desktop;
+- Linux home server, NAS, or desktop running Docker Engine with Compose;
+- x86_64 (`linux/amd64`) container image;
+- no Docker Desktop on macOS or Windows;
+- no native server build on Windows or macOS;
 - behind NAT;
 - dynamic public IP;
 - no public domain or port forwarding required;
@@ -290,8 +293,9 @@ AIQIEZI_GID=1000
 Users with a different host UID/GID set these values in `.env`. No setup script
 is required. The entrypoint never touches PostgreSQL data.
 
-Initial target is `linux/amd64`. ARM64 support is deferred until there is a
-real ARM deployment target.
+Initial target is `linux/amd64` on a Linux Docker Engine host. ARM64 support is
+deferred until there is a real ARM deployment target. Docker Desktop on macOS
+or Windows and native server builds on those platforms are not supported.
 
 Production Compose instructions are in [deploy/README.md](deploy/README.md).
 The stack uses host networking for the server, a private bridge for PostgreSQL,

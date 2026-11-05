@@ -38,6 +38,15 @@ Mandatory constraints:
 - the backend is the single source of truth;
 - the GUI is deferred until the CLI/server are functional.
 
+## Platform support
+
+- The server deployment target is a Linux host running Docker Engine with
+  Compose.
+- The container image targets `linux/amd64`; ARM64 is deferred.
+- Docker Desktop on macOS or Windows is not a supported server host.
+- Native server builds and deployments on Windows or macOS are unsupported.
+- Do not add Windows- or macOS-specific server code paths.
+
 ## Repository layout
 
 ```text

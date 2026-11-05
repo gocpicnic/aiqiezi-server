@@ -54,7 +54,7 @@ Content hash:       BLAKE3
 Asset ID:           UUID
 Search:             PostgreSQL FTS + jieba-rs + pg_trgm
 Media storage:      content-addressed filesystem
-Deployment:         Docker Compose
+Deployment:         Linux Docker Engine + Compose only
 Server build:       x86_64-unknown-linux-musl, built outside Docker
 Server runtime:     Debian slim + tini + gosu entrypoint
 Container user:     AIQIEZI_UID/AIQIEZI_GID, default 1000:1000
@@ -67,7 +67,8 @@ Daemon model:       one process, two listeners
 Admin transport:    Unix domain socket /run/aiqiezi/admin.sock
 Admin protocol:     JSON Lines, one request per connection
 Instance lock:      /run/aiqiezi/server.lock
-Initial platforms:  linux/amd64 only
+Server platform:    linux/amd64 only
+Docker Desktop:     unsupported on macOS and Windows
 ```
 
 ## Working rules
@@ -800,9 +801,10 @@ aiqiezi-server migrate-status
 aiqiezi-server healthcheck
 ```
 
-The initial platform is `linux/amd64` only. ARM64 is deferred until there is a
-real ARM target; when needed, use a native ARM64 build runner rather than QEMU
-emulation.
+The initial platform is `linux/amd64` on a Linux Docker Engine host. ARM64 is
+deferred until there is a real ARM target; when needed, use a native ARM64
+build runner rather than QEMU emulation. Docker Desktop on macOS or Windows and
+native server builds on those platforms are not supported.
 
 FFmpeg and video processing will live in a separate media-worker image later.
 

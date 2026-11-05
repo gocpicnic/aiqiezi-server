@@ -11,6 +11,14 @@ The current server is Phase 1B: it provides the iroh endpoint and local admin
 socket. PostgreSQL is included in the stack for Phase 2, but the server does
 not use it yet.
 
+## Supported host
+
+- Linux host with Docker Engine and Compose v2.
+- `linux/amd64` server image.
+- Host networking for the server service.
+- Docker Desktop on macOS or Windows is not supported.
+- ARM64 hosts are not supported yet.
+
 ## Build and publish the image
 
 Build the static binary and image on a development machine:
