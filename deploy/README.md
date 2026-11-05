@@ -156,9 +156,14 @@ docker compose up -d aiqiezi-server
 ## Verify the daemon
 
 ```bash
+docker compose exec aiqiezi-server aiqiezi-server --version
 docker compose exec aiqiezi-server aiqiezi-server status
 docker compose exec aiqiezi-server aiqiezi-server healthcheck
 ```
+
+`aiqiezi-server` is the Compose service name. `docker compose exec` runs the
+command in the existing running container; `docker compose run` starts a
+separate one-off container.
 
 Logs:
 

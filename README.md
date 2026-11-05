@@ -167,13 +167,19 @@ The socket and lock file live under `AIQIEZI_RUNTIME_DIR`:
 For a manually run development server, the Makefile uses `./data/run` if
 `AIQIEZI_RUNTIME_DIR` is not set.
 
-Inside Docker:
+Inside Docker, `aiqiezi-server` is the Compose service name. Use `exec` to run
+a command in the existing running container:
 
 ```bash
+docker compose exec aiqiezi-server aiqiezi-server --version
 docker compose exec aiqiezi-server aiqiezi-server status
 docker compose exec aiqiezi-server aiqiezi-server healthcheck
 docker compose exec aiqiezi-server aiqiezi-server shutdown
 ```
+
+Do not add the `run` subcommand to these commands. `docker compose run` starts
+a separate one-off container and is only used for operations such as
+`migrate` and `set-password`.
 
 `shutdown` exits the process; with the Compose restart policy Docker may start
 it again. Use `docker compose stop aiqiezi-server` when it should stay stopped.
