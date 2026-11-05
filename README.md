@@ -66,7 +66,7 @@ CLI / GUI
     v
 aiqiezi-server daemon
     |
-    +-- PostgreSQL: metadata only
+    +-- PostgreSQL: metadata only (Phase 2)
     +-- content-addressed media storage: photos/videos
 
 server admin CLI
@@ -90,7 +90,8 @@ the server filesystem directly.
 
 ## Main components
 
-- **PostgreSQL**: metadata, folders, tags, search indexes, client whitelist.
+- **PostgreSQL (Phase 2)**: metadata, folders, tags, search indexes, client
+  whitelist.
 - **Media storage**: photos and videos in a content-addressed tree.
 - **iroh JSON**: client control and metadata commands.
 - **iroh-blobs**: media upload and download.

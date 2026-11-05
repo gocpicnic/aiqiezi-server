@@ -57,7 +57,7 @@ Content hash:       BLAKE3
 Asset ID:           UUID
 Search:             PostgreSQL FTS + jieba-rs + pg_trgm
 Media storage:      content-addressed filesystem
-Deployment:         Linux Docker Engine + Compose only
+Deployment:         single-file compose.yaml on Linux Docker Engine
 Server build:       x86_64-unknown-linux-musl, built outside Docker
 Server runtime:     Debian slim + tini + gosu entrypoint
 Container user:     AIQIEZI_UID/AIQIEZI_GID, default 1000:1000
@@ -552,7 +552,8 @@ Implement:
 - startup connection check;
 - health-check query.
 
-Add a development PostgreSQL service under `compose/`.
+When Phase 2 begins, add a development PostgreSQL service (for example under
+`compose/` or as a Compose profile).
 
 ### Step 2.2 — Migration workflow
 
@@ -1017,7 +1018,7 @@ Flow:
 
 Rules:
 
-- never use `latest` in production;
+- use `latest` for NAS/manual upgrades and keep dated tags for rollback;
 - never deploy when the backup fails;
 - never recreate the server when migrations fail;
 - stop the daemon before migrations;
@@ -1060,7 +1061,8 @@ Requirements:
 - pull requests build but do not push;
 - main builds and may push `main` and `sha-*` tags;
 - version tags create GitHub Releases;
-- production deploys only explicit `vX.Y.Z` tags, never `latest` or `main`;
+- NAS/manual deployments use `latest`; keep dated tags for rollback;
+- never deploy `main` or `sha-*` tags;
 - use `GITHUB_TOKEN` with least privilege;
 - no QEMU-based ARM builds initially;
 - ARM64 support, when needed, uses a native ARM64 runner in a build matrix;
@@ -1100,13 +1102,14 @@ Watchtower is optional and must only be added after:
 - automatic backups are verified;
 - health checks work;
 - rollback is tested;
-- production uses immutable version tags.
+- production keeps dated tags for rollback; NAS/manual deployments may use
+  `latest`.
 
 Constraints:
 
 - watch only the server container;
 - exclude PostgreSQL;
-- use version tags, not `latest`;
+- use `latest` for NAS upgrades and keep dated tags for rollback;
 - run a backup before updates;
 - verify readiness after updates;
 - retain the previous image for rollback;

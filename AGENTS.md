@@ -93,7 +93,7 @@ depends on it. CLI and GUI consume it through the shared client library.
 - backups, integrity checks, and maintenance;
 - health and operational status.
 
-## PostgreSQL rules
+## PostgreSQL rules (Phase 2)
 
 - Metadata only; never store original photo/video bytes.
 - Every schema change must have a migration.
