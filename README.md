@@ -94,24 +94,43 @@ the server filesystem directly.
 - **Media storage**: photos and videos in a content-addressed tree.
 - **iroh JSON**: client control and metadata commands.
 - **iroh-blobs**: media upload and download.
+- **Authentication**: bootstrap password, login, and password change over
+  `/aiqiezi-auth/1`.
 - **Whitelist**: authorization by client EndpointId.
 - **Admin socket**: local-only server commands over a Unix domain socket.
 - **Instance lock**: prevents two daemons from sharing one data directory.
 
 ## Security model
 
-There is no login, password, or session-token flow. Clients are identified by
-their persistent iroh EndpointId and authorized by a server-side whitelist.
+Initial client enrollment uses a bootstrap password configured on the server:
+
+```text
+AIQIEZI_BOOTSTRAP_PASSWORD
+```
+
+The first login returns `password_change_required`. The client must change the
+password over `/aiqiezi-auth/1` before it is enrolled. The password change
+stores only an Argon2id hash, clears the whitelist, and enrolls the caller's
+EndpointId. After that change, the bootstrap value is ignored.
+
+There is no session-token flow. Enrolled clients are identified by their
+persistent iroh EndpointId and authorized by the server whitelist.
 
 First enrollment:
 
 ```bash
-# On the client, print its EndpointId
-aiqiezi whoami
+# Set AIQIEZI_BOOTSTRAP_PASSWORD in the server .env first.
 
-# On the server host, authorize it
-aiqiezi-server client-add <endpoint-id> --label "laptop"
+# On the client
+aiqiezi login
+aiqiezi change-password
+aiqiezi whoami
 ```
+
+The auth ALPN is accepted before enrollment. The JSON and blob ALPNs are
+accepted only for whitelisted EndpointIds. Clients must perform login and
+password change with their persistent iroh secret key; the server enrolls the
+EndpointId of the connection.
 
 Revocation:
 
@@ -120,7 +139,8 @@ aiqiezi-server client-disable <endpoint-id>
 aiqiezi-server client-remove <endpoint-id>
 ```
 
-The whitelist is enforced at the iroh connection layer and protects both JSON
+The whitelist is file-backed until Phase 3 migrates client state to
+PostgreSQL. It is enforced at the iroh connection layer and protects both JSON
 and blob access.
 
 Initial blob access is a trusted-whitelist model: any whitelisted client may
@@ -158,13 +178,27 @@ docker compose exec aiqiezi-server aiqiezi-server shutdown
 `shutdown` exits the process; with the Compose restart policy Docker may start
 it again. Use `docker compose stop aiqiezi-server` when it should stay stopped.
 
-`status`, `healthcheck`, and `shutdown` are implemented. Database, migration,
-media-storage, and whitelist-related fields currently report `not_configured`
-or `database_unavailable` until Phase 2/3. Client whitelist administration is
-also deferred.
+`status`, `healthcheck`, and `shutdown` are implemented. Bootstrap login,
+`change-password`, Argon2id password storage, and the EndpointId firewall are
+implemented. Database, migration, and media-storage fields currently report
+`not_configured` or `database_unavailable` until Phase 2/3. The `client-add`,
+`client-list`, `client-disable`, `client-enable`, and `client-remove` commands
+are deferred until Phase 3.
 
-The daemon owns all database writes. Client whitelist changes take effect for
-subsequent connections without restarting the daemon.
+The daemon owns all writes. Client whitelist changes take effect for subsequent
+connections without restarting the daemon.
+
+For terminal-based recovery or offline rotation, stop the daemon and run:
+
+```bash
+docker compose stop aiqiezi-server
+docker compose run --rm -it aiqiezi-server aiqiezi-server set-password
+docker compose up -d aiqiezi-server
+```
+
+`set-password` holds the instance lock and clears the whitelist. NAS and
+Compose users normally use `change-password` from the client instead and do not
+need a terminal on the server host.
 
 Migrations are a one-shot operation outside the running daemon:
 
@@ -185,6 +219,7 @@ Production data lives outside the repository:
 ├── media/
 ├── postgres/
 ├── keys/
+│   └── auth.json       # Argon2id hash + temporary client whitelist
 ├── config/
 ├── backups/
 └── logs/
@@ -200,8 +235,10 @@ Runtime-only files:
 For local development, set `AIQIEZI_RUNTIME_DIR=./data/run` or let the
 Makefile use that fallback.
 
-The iroh secret key must be backed up. Losing it changes the backend EndpointId
-and requires every client to be reconfigured.
+The iroh secret key and `keys/auth.json` must be backed up. Losing the key
+changes the backend EndpointId and requires every client to be reconfigured.
+Losing `auth.json` forces a bootstrap-password reset and clears the client
+whitelist.
 
 ## Development
 
@@ -240,19 +277,31 @@ make version
 # aiqiezi-server 0.1.0 (build 20261104123045)
 ```
 
-Run the Phase 1B daemon manually:
+Run the daemon manually:
 
 ```bash
 AIQIEZI_DATABASE_URL='postgres://user:pass@127.0.0.1/aiqiezi' \
+AIQIEZI_BOOTSTRAP_PASSWORD='ChangeMe-123!' \
 AIQIEZI_RUNTIME_DIR='./data/run' \
-  cargo run -p aiqiezi-server -- run
+  cargo run -p aiqiezi-server -- start
 ```
 
 The Makefile does the same and falls back to `./data/run` when
 `AIQIEZI_RUNTIME_DIR` is unset. On first start the server creates
-`keys/secret_key.bin` and writes `keys/endpoint_ticket.txt` under
+`keys/secret_key.bin`, writes `keys/endpoint_ticket.txt`, and stores the
+bootstrap password hash and must-change state in `keys/auth.json` under
 `AIQIEZI_DATA_DIR`. PostgreSQL is not opened yet; the database URL is validated
 but reserved for Phase 2.
+
+Before the client CLI exists, the development example can exercise the auth
+protocol against a running server:
+
+```bash
+AIQIEZI_PASSWORD='...' AIQIEZI_NEW_PASSWORD='...' \
+  cargo run -p aiqiezi-server --example auth_client -- \
+  --ticket-file ./data/keys/endpoint_ticket.txt \
+  --data-dir ./data/auth-client flow
+```
 
 ## Container image
 
@@ -303,7 +352,7 @@ and mounts only the media, keys, and config directories into the app container.
 
 ## Status
 
-Phase 1 and Phase 1B daemon infrastructure implemented:
+Phase 1, Phase 1B, and bootstrap authentication are implemented:
 
 - persistent EndpointId key and endpoint ticket
 - relay, DNS, and optional bind-address configuration
@@ -311,15 +360,18 @@ Phase 1 and Phase 1B daemon infrastructure implemented:
 - versioned JSON protocol envelopes in `aiqiezi-proto`
 - JSON Lines `server-info` and `status` commands over
   `/aiqiezi-json/1`
+- bootstrap password login and `change-password` over `/aiqiezi-auth/1`
+- Argon2id password storage, must-change state, login rate limiting, and
+  EndpointId whitelist enforcement at the iroh firewall
 - exclusive daemon instance lock
 - local Unix admin socket with restrictive permissions
 - `status`, `healthcheck`, and `shutdown` admin commands
 - Docker runtime image, Compose stack, and production deployment guide
 - in-process transport and lock/admin tests
 
-PostgreSQL, client whitelist enforcement, media storage, and iroh-blobs are not
-implemented yet. The admin database/migration/storage fields currently report
-`not_configured`. Next phase: Phase 2 PostgreSQL foundation.
+PostgreSQL, asset metadata, media storage, iroh-blobs, and admin-managed client
+whitelist commands are not implemented yet. Client authorization is currently
+file-backed and bootstrap-enrolled. Next phase: Phase 2 PostgreSQL foundation.
 
 ## Documentation
 

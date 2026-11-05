@@ -28,4 +28,4 @@ ENV AIQIEZI_DATA_DIR=/data \
 STOPSIGNAL SIGTERM
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
-CMD ["run"]
+CMD ["start"]

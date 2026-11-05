@@ -92,12 +92,12 @@ docker-save: docker-image
 run: check-env build
 	@set -a; . "$(ENV_PATH)"; set +a; \
 		export AIQIEZI_RUNTIME_DIR="$${AIQIEZI_RUNTIME_DIR:-$(RUNTIME_DIR)}"; \
-		exec "./$(BIN)" run
+		exec "./$(BIN)" start
 
 run-debug: check-env
 	@set -a; . "$(ENV_PATH)"; set +a; \
 		export AIQIEZI_RUNTIME_DIR="$${AIQIEZI_RUNTIME_DIR:-$(RUNTIME_DIR)}"; \
-		BUILD_DATE="$(BUILD_DATE)" exec $(CARGO) run -p aiqiezi-server -- run
+		BUILD_DATE="$(BUILD_DATE)" exec $(CARGO) run -p aiqiezi-server -- start
 
 status: check-env build
 	@set -a; . "$(ENV_PATH)"; set +a; \

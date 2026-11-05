@@ -26,6 +26,7 @@ pub struct Config {
     pub dns_server: Option<String>,
     pub bind_addr: Option<SocketAddr>,
     pub log_level: String,
+    pub bootstrap_password: Option<String>,
 }
 
 impl fmt::Debug for Config {
@@ -43,6 +44,10 @@ impl fmt::Debug for Config {
             .field("dns_server", &self.dns_server)
             .field("bind_addr", &self.bind_addr)
             .field("log_level", &self.log_level)
+            .field(
+                "bootstrap_password",
+                &self.bootstrap_password.as_ref().map(|_| "<redacted>"),
+            )
             .finish()
     }
 }
@@ -121,6 +126,7 @@ impl Config {
             dns_server: optional_nonempty(&vars, "AIQIEZI_DNS_SERVER"),
             bind_addr,
             log_level,
+            bootstrap_password: optional_nonempty(&vars, "AIQIEZI_BOOTSTRAP_PASSWORD"),
         })
     }
 
@@ -204,6 +210,7 @@ mod tests {
         assert_eq!(config.dns_server, None);
         assert_eq!(config.bind_addr, None);
         assert_eq!(config.log_level, "info");
+        assert_eq!(config.bootstrap_password, None);
     }
 
     #[test]
@@ -238,6 +245,10 @@ mod tests {
                 "/tmp/aiqiezi-runtime".to_string(),
             ),
             ("AIQIEZI_LOG_LEVEL".to_string(), "debug".to_string()),
+            (
+                "AIQIEZI_BOOTSTRAP_PASSWORD".to_string(),
+                "ChangeMe-123!".to_string(),
+            ),
         ]);
 
         let config = Config::from_iter(vars).unwrap();
@@ -252,6 +263,7 @@ mod tests {
         assert_eq!(config.dns_server.as_deref(), Some("dns.example"));
         assert_eq!(config.runtime_dir, PathBuf::from("/tmp/aiqiezi-runtime"));
         assert_eq!(config.log_level, "debug");
+        assert_eq!(config.bootstrap_password.as_deref(), Some("ChangeMe-123!"));
     }
 
     #[test]
@@ -264,6 +276,7 @@ mod tests {
             ("AIQIEZI_BIND_ADDR".to_string(), "".to_string()),
             ("AIQIEZI_RUNTIME_DIR".to_string(), "".to_string()),
             ("AIQIEZI_LOG_LEVEL".to_string(), "".to_string()),
+            ("AIQIEZI_BOOTSTRAP_PASSWORD".to_string(), "".to_string()),
         ]);
 
         let config = Config::from_iter(vars).unwrap();
@@ -274,6 +287,29 @@ mod tests {
         assert_eq!(config.bind_addr, None);
         assert_eq!(config.runtime_dir, PathBuf::from("/run/aiqiezi"));
         assert_eq!(config.log_level, "info");
+        assert_eq!(config.bootstrap_password, None);
+    }
+
+    #[test]
+    fn debug_redacts_secrets() {
+        let mut vars = base_vars();
+        vars.extend([
+            (
+                "AIQIEZI_BOOTSTRAP_PASSWORD".to_string(),
+                "ChangeMe-123!".to_string(),
+            ),
+            (
+                "AIQIEZI_RELAY_TOKEN".to_string(),
+                "relay-secret".to_string(),
+            ),
+        ]);
+        let config = Config::from_iter(vars).unwrap();
+
+        let debug = format!("{config:?}");
+        assert!(!debug.contains("ChangeMe-123!"));
+        assert!(!debug.contains("relay-secret"));
+        assert!(!debug.contains("postgres://user:pass"));
+        assert!(debug.contains("<redacted>"));
     }
 
     #[test]

@@ -7,7 +7,7 @@
 
 use std::path::Path;
 
-use aiqiezi_proto::ALPN_JSON;
+use aiqiezi_proto::{ALPN_AUTH, ALPN_JSON};
 use anyhow::Context;
 use iroh::address_lookup::{DnsAddressLookup, PkarrPublisher, PkarrResolver};
 use iroh::endpoint::presets;
@@ -17,7 +17,10 @@ use iroh_tickets::endpoint::EndpointTicket;
 use tracing::info;
 use url::Url;
 
+use crate::auth::AuthState;
+use crate::auth_handler::AuthHandler;
 use crate::config::Config;
+use crate::firewall::AuthHooks;
 use crate::json::JsonHandler;
 
 /// Load the persistent endpoint key, creating it on first start.
@@ -152,11 +155,16 @@ fn dns_server_config(config: &Config) -> Option<(Url, String)> {
     Some((url, format!("{host}.")))
 }
 
-async fn bind_endpoint(config: &Config, key: SecretKey) -> anyhow::Result<Endpoint> {
+async fn bind_endpoint(
+    config: &Config,
+    key: SecretKey,
+    hooks: AuthHooks,
+) -> anyhow::Result<Endpoint> {
     let mut builder = apply_address_lookup(
         Endpoint::builder(presets::N0)
             .relay_mode(relay_mode(config))
-            .secret_key(key),
+            .secret_key(key)
+            .hooks(hooks),
         config,
     );
 
@@ -172,11 +180,16 @@ async fn bind_endpoint(config: &Config, key: SecretKey) -> anyhow::Result<Endpoi
 pub struct RunningEndpoint {
     endpoint: Endpoint,
     router: iroh::protocol::Router,
+    auth: AuthState,
 }
 
 impl RunningEndpoint {
     pub fn id(&self) -> iroh::EndpointId {
         self.endpoint.id()
+    }
+
+    pub fn auth(&self) -> AuthState {
+        self.auth.clone()
     }
 
     pub async fn shutdown(self) -> anyhow::Result<()> {
@@ -189,32 +202,212 @@ impl RunningEndpoint {
     }
 }
 
-/// Start the iroh endpoint and JSON handler.
+/// Start the iroh endpoint, auth handler, and JSON handler.
 pub async fn start(config: &Config) -> anyhow::Result<RunningEndpoint> {
+    let auth =
+        AuthState::load_or_initialize(&config.keys_dir, config.bootstrap_password.as_deref())?;
     let key = load_or_create_key(config)?;
-    let endpoint = bind_endpoint(config, key).await?;
+    let endpoint = bind_endpoint(config, key, AuthHooks::new(auth.clone())).await?;
     info!("NODE ID: {}", endpoint.id());
 
     save_endpoint_ticket(config, &endpoint)?;
     info!("endpoint ticket saved");
 
     let handler = JsonHandler::new(endpoint.clone());
+    let auth_handler = AuthHandler::new(auth.clone());
     let router = iroh::protocol::Router::builder(endpoint.clone())
+        .accept(ALPN_AUTH, auth_handler)
         .accept(ALPN_JSON, handler)
         .spawn();
 
-    info!("listening on ALPN {:?}", String::from_utf8_lossy(ALPN_JSON));
-    Ok(RunningEndpoint { endpoint, router })
+    info!(
+        "listening on ALPNs {:?} and {:?}",
+        String::from_utf8_lossy(ALPN_AUTH),
+        String::from_utf8_lossy(ALPN_JSON)
+    );
+    Ok(RunningEndpoint {
+        endpoint,
+        router,
+        auth,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::{load_or_create_key, save_endpoint_ticket};
+    use crate::auth::{AuthState, BOOTSTRAP_TEST_PASSWORD};
+    use crate::auth_handler::AuthHandler;
     use crate::config::Config;
-    use iroh::endpoint::presets;
+    use crate::firewall::AuthHooks;
+    use crate::json::JsonHandler;
+    use aiqiezi_proto::{error_codes, Response, ALPN_AUTH, ALPN_JSON, PROTOCOL_VERSION};
+    use iroh::endpoint::{presets, Connection};
+    use iroh::protocol::Router;
     use iroh::{Endpoint, RelayMode};
+    use serde_json::{json, Value};
     use std::net::SocketAddr;
     use std::path::Path;
+    use std::time::Duration;
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+
+    async fn test_endpoint() -> Endpoint {
+        Endpoint::builder(presets::Minimal)
+            .relay_mode(RelayMode::Disabled)
+            .bind_addr("127.0.0.1:0".parse::<SocketAddr>().unwrap())
+            .unwrap()
+            .bind()
+            .await
+            .unwrap()
+    }
+
+    async fn request_succeeds(conn: &Connection, command: &str) -> bool {
+        let Ok((mut send, recv)) = conn.open_bi().await else {
+            return false;
+        };
+        let request = json!({
+            "version": PROTOCOL_VERSION,
+            "request_id": "test",
+            "command": command,
+            "params": {},
+        });
+        if send
+            .write_all(request.to_string().as_bytes())
+            .await
+            .is_err()
+        {
+            return false;
+        }
+        if send.write_all(b"\n").await.is_err() {
+            return false;
+        }
+        if send.flush().await.is_err() {
+            return false;
+        }
+
+        let mut reader = BufReader::new(recv);
+        let mut line = String::new();
+        let Ok(bytes) = reader.read_line(&mut line).await else {
+            return false;
+        };
+        if bytes == 0 {
+            return false;
+        }
+        serde_json::from_str::<Response>(&line)
+            .map(|response| response.ok)
+            .unwrap_or(false)
+    }
+
+    async fn request(conn: &Connection, command: &str, params: Value) -> Response {
+        let (mut send, recv) = conn.open_bi().await.unwrap();
+        let request = json!({
+            "version": PROTOCOL_VERSION,
+            "request_id": "test",
+            "command": command,
+            "params": params,
+        });
+        send.write_all(request.to_string().as_bytes())
+            .await
+            .unwrap();
+        send.write_all(b"\n").await.unwrap();
+        send.flush().await.unwrap();
+
+        let mut reader = BufReader::new(recv);
+        let mut line = String::new();
+        reader.read_line(&mut line).await.unwrap();
+        serde_json::from_str(&line).unwrap()
+    }
+
+    #[test]
+    fn firewall_requires_auth_before_json() {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        runtime.block_on(async {
+            let auth_dir = tempfile::tempdir().unwrap();
+            let auth = AuthState::load_or_initialize(
+                &auth_dir.path().join("keys"),
+                Some(BOOTSTRAP_TEST_PASSWORD),
+            )
+            .unwrap();
+
+            let server_endpoint = Endpoint::builder(presets::Minimal)
+                .relay_mode(RelayMode::Disabled)
+                .bind_addr("127.0.0.1:0".parse::<SocketAddr>().unwrap())
+                .unwrap()
+                .hooks(AuthHooks::new(auth.clone()))
+                .bind()
+                .await
+                .unwrap();
+            let router = Router::builder(server_endpoint.clone())
+                .accept(ALPN_AUTH, AuthHandler::new(auth.clone()))
+                .accept(ALPN_JSON, JsonHandler::new(server_endpoint.clone()))
+                .spawn();
+
+            let client = test_endpoint().await;
+
+            let unauthorized = tokio::time::timeout(
+                Duration::from_secs(10),
+                client.connect(server_endpoint.addr(), ALPN_JSON),
+            )
+            .await
+            .expect("unauthorized JSON connection timed out");
+            let blocked = match unauthorized {
+                Err(_) => true,
+                Ok(conn) => !request_succeeds(&conn, "server-info").await,
+            };
+            assert!(blocked, "unauthorized JSON request was not blocked");
+
+            let auth_conn = tokio::time::timeout(
+                Duration::from_secs(10),
+                client.connect(server_endpoint.addr(), ALPN_AUTH),
+            )
+            .await
+            .expect("auth connection timed out")
+            .unwrap();
+
+            let response = request(
+                &auth_conn,
+                "login",
+                json!({"password": BOOTSTRAP_TEST_PASSWORD}),
+            )
+            .await;
+            assert!(!response.ok);
+            assert_eq!(
+                response.error.unwrap().code,
+                error_codes::PASSWORD_CHANGE_REQUIRED
+            );
+
+            let new_password = "NewPass-456!";
+            let response = request(
+                &auth_conn,
+                "change-password",
+                json!({
+                    "old_password": BOOTSTRAP_TEST_PASSWORD,
+                    "new_password": new_password,
+                }),
+            )
+            .await;
+            assert!(response.ok, "{:?}", response.error);
+
+            let json_conn = tokio::time::timeout(
+                Duration::from_secs(10),
+                client.connect(server_endpoint.addr(), ALPN_JSON),
+            )
+            .await
+            .expect("authorized JSON connection timed out")
+            .unwrap();
+            let response = request(&json_conn, "server-info", json!({})).await;
+            assert!(response.ok, "{:?}", response.error);
+
+            json_conn.close(0u32.into(), b"test complete");
+            auth_conn.close(0u32.into(), b"test complete");
+            client.close().await;
+            router.shutdown().await.unwrap();
+            server_endpoint.close().await;
+        });
+    }
 
     fn config(data_dir: &Path) -> Config {
         Config {
@@ -230,6 +423,7 @@ mod tests {
             dns_server: None,
             bind_addr: None,
             log_level: "info".to_string(),
+            bootstrap_password: None,
         }
     }
 

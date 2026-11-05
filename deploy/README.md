@@ -7,9 +7,10 @@
 
 # Production deployment
 
-The current server is Phase 1B: it provides the iroh endpoint and local admin
-socket. PostgreSQL is included in the stack for Phase 2, but the server does
-not use it yet.
+The current server provides the iroh endpoint, bootstrap password
+authentication, EndpointId whitelist enforcement, and the local admin socket.
+PostgreSQL is included in the stack for Phase 2, but the server does not use it
+yet.
 
 ## Supported host
 
@@ -82,13 +83,14 @@ cp /path/to/aiqiezi-server/deploy/.env.example .env
 chmod 600 .env
 ```
 
-Edit `.env` and replace every `change-me` value. Set:
+Edit `.env` and replace every placeholder value. Set:
 
 ```text
 AIQIEZI_TAG
 AIQIEZI_UID
 AIQIEZI_GID
 AIQIEZI_DATABASE_URL
+AIQIEZI_BOOTSTRAP_PASSWORD
 POSTGRES_PASSWORD
 ```
 
@@ -96,6 +98,11 @@ POSTGRES_PASSWORD
 `make docker-save`, including the timestamp suffix. The PostgreSQL password
 must match `AIQIEZI_DATABASE_URL`. Use a URL-safe password or percent-encode it
 in the URL.
+
+`AIQIEZI_BOOTSTRAP_PASSWORD` is used only when no password hash exists. It must
+meet the password policy: 8-128 characters with uppercase, lowercase, digit,
+and special character. The first client login must change it. After that
+change, the value is ignored.
 
 If using GHCR:
 
@@ -113,6 +120,36 @@ docker compose ps
 
 The server uses host networking. PostgreSQL is published only on
 `127.0.0.1:5432`; it is not exposed to the public network.
+
+## First client enrollment
+
+On the client, log in with `AIQIEZI_BOOTSTRAP_PASSWORD` and change it:
+
+```bash
+aiqiezi login
+aiqiezi change-password
+```
+
+The first login returns `password_change_required` and does not grant access.
+The password change enrolls the client EndpointId in the server whitelist. No
+terminal on the server host is required.
+
+Do not edit `keys/auth.json` manually. Use `change-password` from a client or
+the offline `set-password` command.
+
+If the password is lost, stop the server, remove
+`/mnt/data/aiqiezi/keys/auth.json`, set a new
+`AIQIEZI_BOOTSTRAP_PASSWORD`, and start the server again. This clears the
+whitelist; every client must enroll again.
+
+Alternatively, terminal users can run the offline command while the server is
+stopped:
+
+```bash
+docker compose stop aiqiezi-server
+docker compose run --rm -it aiqiezi-server aiqiezi-server set-password
+docker compose up -d aiqiezi-server
+```
 
 ## Verify the daemon
 
@@ -173,4 +210,6 @@ owns its own data directory. If PostgreSQL reports an ownership error, a
 one-time host-side `chown 999:999 /mnt/data/aiqiezi/postgres` is acceptable;
 this is troubleshooting, not a required setup step.
 
-Back up the iroh key. Losing it changes the server EndpointId.
+Back up the iroh key and `keys/auth.json`. Losing the iroh key changes the
+server EndpointId; losing `auth.json` forces a bootstrap-password reset and
+clears the client whitelist.

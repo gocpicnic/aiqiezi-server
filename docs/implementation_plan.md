@@ -11,16 +11,17 @@ Last updated: 2026-11-04
 
 ## Status
 
-Completed: Phase 0, Phase 0B, Phase 1, and Phase 1B daemon infrastructure
-(instance lock, admin socket, startup/shutdown ordering, and admin tests).
+Completed: Phase 0, Phase 0B, Phase 1, Phase 1B daemon infrastructure
+(instance lock, admin socket, startup/shutdown ordering, and admin tests), and
+Phase 1C bootstrap password authentication.
 
 Docker runtime image, Compose stack, entrypoint, and manual build/push/save
 workflow are implemented ahead of the main phase order. Docker image tags use
 the Cargo package version plus a `YYYYMMDDHHMMSS` UTC build timestamp. CI image
 publishing is still deferred.
 
-Deferred to Phase 2/3: database, migration, media-storage, and whitelist fields
-in admin `status`/`healthcheck`, plus `reload-whitelist`.
+Deferred to Phase 2/3: database, migration, media-storage, and PostgreSQL
+whitelist fields in admin `status`/`healthcheck`, plus `reload-whitelist`.
 
 Next: Phase 2 — PostgreSQL foundation.
 
@@ -36,8 +37,10 @@ architecture, deployment model, and non-goals.
 - Photo/video bytes live in content-addressed storage.
 - Clients connect with iroh JSON and iroh-blobs.
 - No HTTP server or HTTP client.
-- Clients are authorized by an iroh EndpointId whitelist.
-- There is no login, password, or session-token flow.
+- Initial enrollment uses `AIQIEZI_BOOTSTRAP_PASSWORD`.
+- The first login must change the bootstrap password.
+- After the change, clients are authorized by an iroh EndpointId whitelist.
+- There is no session-token flow.
 - The server is the single source of truth.
 - There is one daemon process with two listeners:
   - a public iroh endpoint for clients;
@@ -69,6 +72,9 @@ Admin protocol:     JSON Lines, one request per connection
 Instance lock:      /run/aiqiezi/server.lock
 Server platform:    linux/amd64 only
 Docker Desktop:     unsupported on macOS and Windows
+Auth transport:     /aiqiezi-auth/1
+Auth bootstrap:     AIQIEZI_BOOTSTRAP_PASSWORD, first startup only
+Auth storage:       Argon2id hash + temporary file whitelist under keys/
 ```
 
 ## Working rules
@@ -295,8 +301,9 @@ Acceptance:
 The server is one daemon process with two listeners:
 
 ```text
-aiqiezi-server run
+aiqiezi-server start
 ├── iroh endpoint + RouterBuilder
+│   ├── /aiqiezi-auth/1
 │   ├── /aiqiezi-json/1
 │   └── iroh-blobs
 └── UnixListener
@@ -461,6 +468,80 @@ Test:
 - stale socket removal;
 - simultaneous admin requests.
 
+## Phase 1C — Bootstrap password authentication
+
+The first client enrollment uses a bootstrap password from
+`AIQIEZI_BOOTSTRAP_PASSWORD`. This is not a session-token flow: the password
+only bootstraps the EndpointId whitelist. After the first password change, the
+bootstrap value is ignored.
+
+### Step 1C.1 — Auth state
+
+Implement:
+
+- `keys/auth.json` with the Argon2id hash, must-change flag, and temporary
+  EndpointId whitelist;
+- `0600` file permissions and `0700` directory permissions;
+- atomic replacement so the hash and whitelist are updated together.
+
+Startup rules:
+
+- if a password hash exists, load it and ignore the bootstrap env value;
+- if no hash exists, require `AIQIEZI_BOOTSTRAP_PASSWORD`;
+- validate the bootstrap password strength before hashing;
+- persist the hash and set the must-change state;
+- fail startup clearly when neither a hash nor the env value exists.
+
+Tests:
+
+- missing hash and missing env fails;
+- weak bootstrap password fails;
+- valid bootstrap creates a hash and must-change state;
+- existing hash ignores the env value;
+- whitelist persistence round-trip.
+
+### Step 1C.2 — Auth transport
+
+Implement:
+
+- `ALPN_AIQIEZI_AUTH = /aiqiezi-auth/1`;
+- `login` and `change-password` over the auth ALPN;
+- `login` returns `password_change_required` while the must-change state is
+  set and does not enroll the client;
+- successful login after the password change enrolls the EndpointId;
+- `change-password` verifies the old password, validates the new password,
+  rehashes it, clears the must-change state, and resets the whitelist to the
+  caller;
+- rate-limit failed login attempts per EndpointId;
+- run Argon2 hashing and verification in `spawn_blocking`;
+- never log or return passwords or hashes.
+
+### Step 1C.3 — Connection firewall
+
+Implement:
+
+- `EndpointHooks` loaded before the endpoint accepts connections;
+- accept the auth ALPN before whitelist enforcement;
+- accept the JSON and blob ALPNs only for whitelisted EndpointIds;
+- reject all other peers with a stable reason;
+- do not add a local-IP bypass.
+
+Tests:
+
+- unauthenticated JSON connection is rejected;
+- auth ALPN connection is accepted;
+- whitelisted JSON connection is accepted;
+- disabled/removed clients are rejected;
+- login and password-change state survives restart.
+
+### Step 1C.4 — Server commands
+
+Implement:
+
+- `start` as the primary foreground daemon command, with `run` as an alias;
+- `set-password` as an optional offline command that holds the instance lock,
+  verifies the old password when present, and clears the whitelist.
+
 ## Phase 2 — PostgreSQL foundation
 
 ### Step 2.1 — Database connection
@@ -520,7 +601,9 @@ create table clients (
 create index on clients(enabled);
 ```
 
-Do not create users, auth sessions, login tokens, or password tables.
+Do not create users, auth sessions, or login-token tables. The bootstrap
+password hash remains a server-local file; the temporary file whitelist is
+migrated into the `clients` table.
 
 ### Step 2.4 — Domain schema
 
@@ -769,7 +852,7 @@ COPY dist/aiqiezi-server /usr/local/bin/aiqiezi-server
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
-CMD ["run"]
+CMD ["start"]
 ```
 
 The entrypoint:
@@ -795,7 +878,7 @@ Requirements:
 The image must contain the server binary and the operational subcommands:
 
 ```text
-aiqiezi-server run
+aiqiezi-server start
 aiqiezi-server migrate
 aiqiezi-server migrate-status
 aiqiezi-server healthcheck
@@ -865,13 +948,14 @@ not a required setup script.
 Implement server subcommands used by deployment:
 
 ```text
-aiqiezi-server run
+aiqiezi-server start
 aiqiezi-server migrate
 aiqiezi-server migrate-status
 aiqiezi-server healthcheck
 ```
 
-`run` starts the normal server process. The deploy script uses the other
+`start` starts the normal server process; `run` remains an alias. The deploy
+script uses the other
 subcommands for migrations and readiness.
 
 `status`, `healthcheck`, client administration, and `shutdown` connect to the
@@ -1073,19 +1157,20 @@ After this phase, begin the CLI repository work.
 
 ## Current status
 
-Phase 0 foundation implemented:
+Implemented:
 
-- Step 0.1 — workspace scaffold complete
-- Step 0.2 — repository metadata complete
-- Step 0.3 — configuration module complete
-- Step 0.4 — error and logging skeleton complete
+- Phase 0 — foundation, configuration, and logging;
+- Phase 0B — CI foundation and repository metadata;
+- Phase 1 — iroh endpoint, protocol envelopes, and JSON handling;
+- Phase 1B — instance lock, admin socket, shutdown ordering, and admin tests;
+- Phase 1C — bootstrap password, login/change-password, Argon2id storage, and
+  EndpointId firewall;
+- Docker runtime image, Compose stack, and deployment documentation.
 
-Phase 0B CI foundation implemented:
+Not implemented yet:
 
-- Step 0B.1 — base CI workflow complete
-- Step 0B.2 — Dependabot and security documentation complete
-- Step 0B.3 — branch protection helper and documentation complete; applying
-  branch protection requires a repository administrator
+- Phase 2 PostgreSQL foundation and migrations;
+- Phase 3 PostgreSQL-backed client whitelist administration;
+- media storage, iroh-blobs, asset metadata, and read APIs.
 
-Database, iroh, and protocol work have not started. Next: Phase 1 iroh
-endpoint.
+Next: Phase 2 — PostgreSQL foundation.

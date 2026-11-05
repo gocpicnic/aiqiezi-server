@@ -30,8 +30,10 @@ Mandatory constraints:
 - media bytes live in content-addressed storage;
 - iroh JSON is the control/metadata transport;
 - iroh-blobs is the media transport;
-- clients are authorized by an iroh EndpointId whitelist;
-- there is no login, password, or session-token flow;
+- initial enrollment uses `AIQIEZI_BOOTSTRAP_PASSWORD`;
+- the first login must change the bootstrap password;
+- after the change, clients are authorized by an iroh EndpointId whitelist;
+- there is no session-token flow;
 - there is one daemon process with a public iroh listener and a local Unix
   admin socket;
 - admin commands are local-only and never exposed through iroh or TCP;
@@ -72,6 +74,7 @@ depends on it. CLI and GUI consume it through the shared client library.
 - iroh-blobs for media upload/download.
 - PostgreSQL through `sqlx`.
 - `serde` / `serde_json` for protocol messages.
+- `argon2` / `password-hash` for bootstrap password storage.
 - `tracing` for structured logs.
 - `anyhow` at application boundaries; `thiserror` for typed library errors.
 - `image` and `ffmpeg`/`ffprobe` for media processing later.
@@ -174,15 +177,18 @@ create table clients (
 ## Protocol rules
 
 - ALPN_AIQIEZI_JSON is the control and metadata transport.
+- ALPN_AIQIEZI_AUTH is the bootstrap login and password-change transport.
 - iroh-blobs is the media transport.
 - No HTTP server or HTTP client for normal operation.
 - Protocol messages are versioned JSON.
 - Paginate large responses.
 - Include a revision/timestamp for cache coherence.
-- Authorize clients by iroh EndpointId whitelist, not passwords or session
-  tokens.
+- The auth ALPN is accepted before whitelist enforcement; the JSON and blob
+  ALPNs are accepted only for whitelisted EndpointIds.
+- Authorize enrolled clients by iroh EndpointId whitelist, not session tokens.
 - Enforce the whitelist at the iroh handshake/firewall layer so JSON and blob
   ALPNs are protected equally.
+- Do not add a local-IP bypass to the firewall.
 - Initial blob access uses the trusted-whitelist model: any whitelisted client
   may fetch any blob if it knows the content hash.
 - Per-asset blob ACLs are deferred until multi-user access is required.
@@ -191,6 +197,13 @@ create table clients (
 ## Security rules
 
 - Never commit keys, relay tokens, database dumps, or media.
+- Keep the bootstrap password in `AIQIEZI_BOOTSTRAP_PASSWORD` in `.env`, not in
+  the repository. Never log it or return it in a response.
+- Store only the Argon2id password hash. Use `spawn_blocking` for hashing and
+  verification.
+- Rate-limit failed login attempts per EndpointId.
+- Auth state files live under the keys directory with `0600`; the keys
+  directory uses `0700`.
 - Keep authorization separate from transport encryption.
 - Keep PostgreSQL off the public network.
 - Run the application process as a non-root user; root is allowed only in the
@@ -205,7 +218,25 @@ create table clients (
 
 ## Client administration
 
-The whitelist is stored in PostgreSQL and enforced by the running server.
+Initial enrollment uses the server bootstrap password:
+
+```text
+AIQIEZI_BOOTSTRAP_PASSWORD   # .env, first startup only
+login                        # client command over ALPN_AIQIEZI_AUTH
+change-password              # required after the first login
+```
+
+The first `login` with the bootstrap password returns
+`password_change_required` and does not enroll the client. `change-password`
+verifies the old password, stores a new Argon2id hash, clears the
+must-change state, clears the whitelist, and enrolls the caller's EndpointId.
+The caller must use its persistent iroh key; a temporary key would enroll the
+wrong identity. After that, the bootstrap value is ignored.
+
+The whitelist is the permanent authorization store. It is file-backed under
+`keys/` until Phase 3 migrates client state to PostgreSQL.
+
+Administrators can manage enrolled clients:
 
 ```text
 aiqiezi-server client-add <endpoint-id> [--label NAME]
@@ -215,8 +246,11 @@ aiqiezi-server client-enable <endpoint-id>
 aiqiezi-server client-remove <endpoint-id>
 ```
 
-Clients generate and persist their own iroh secret key. Enrollment is done by
-adding the resulting EndpointId on the server. There is no login command.
+`set-password` is an optional offline command for terminal users. It requires
+the daemon to be stopped and holds the instance lock.
+
+Clients generate and persist their own iroh secret key. They never store the
+server password.
 
 ## Commands
 
@@ -226,7 +260,8 @@ cargo test --workspace
 cargo fmt --all
 cargo clippy --workspace --all-targets -- -D warnings
 sqlx migrate run
-cargo run -p aiqiezi-server
+cargo run -p aiqiezi-server -- start
+cargo run -p aiqiezi-server -- set-password
 ```
 
 ## Source file rules
@@ -252,6 +287,9 @@ For Markdown use an HTML comment with the same content.
 - Test media hash verification.
 - Test whitelist enforcement for allowed, unknown, disabled, and removed
   clients.
+- Test bootstrap login, `password_change_required`, password change, restart
+  persistence, rate limiting, and weak-password rejection.
+- Test that passwords and hashes never appear in logs or responses.
 - Test that JSON and blob connections are rejected for unauthorized peers.
 - Test backup/restore procedures for metadata.
 - Never require production data or production secrets in tests.

@@ -7,10 +7,13 @@
 
 mod admin;
 mod admin_client;
+mod auth;
+mod auth_handler;
 mod config;
 mod daemon;
 mod endpoint;
 mod error;
+mod firewall;
 mod json;
 mod lock;
 mod logging;
@@ -22,6 +25,7 @@ use std::process::ExitCode;
 
 use crate::config::Config;
 use crate::error::AppError;
+use crate::lock::InstanceLock;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -36,8 +40,11 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Run the server process
-    Run,
+    /// Start the server process in the foreground
+    #[command(visible_alias = "run")]
+    Start,
+    /// Set or change the server password while the daemon is stopped
+    SetPassword,
     /// Query the running daemon status
     Status,
     /// Check daemon health
@@ -74,13 +81,41 @@ fn run(cli: Cli) -> Result<(), AppError> {
         .map_err(|error| AppError::Runtime(anyhow::Error::from(error)))?;
 
     runtime.block_on(async {
-        match cli.command.unwrap_or(Command::Run) {
-            Command::Run => daemon::run(&config).await.map_err(AppError::Runtime),
+        match cli.command.unwrap_or(Command::Start) {
+            Command::Start => daemon::run(&config).await.map_err(AppError::Runtime),
+            Command::SetPassword => run_set_password(&config),
             Command::Status => run_admin(&config, "status").await,
             Command::Healthcheck => run_admin(&config, "healthcheck").await,
             Command::Shutdown => run_admin(&config, "shutdown").await,
         }
     })
+}
+
+fn run_set_password(config: &Config) -> Result<(), AppError> {
+    let _lock = InstanceLock::acquire(&config.runtime_dir).map_err(AppError::Runtime)?;
+
+    let old_password = if auth::password_hash_exists(&config.keys_dir) {
+        Some(
+            rpassword::prompt_password("current password: ")
+                .map_err(|error| AppError::Runtime(anyhow::Error::from(error)))?,
+        )
+    } else {
+        None
+    };
+    let new_password = rpassword::prompt_password("new password: ")
+        .map_err(|error| AppError::Runtime(anyhow::Error::from(error)))?;
+    let confirmation = rpassword::prompt_password("confirm new password: ")
+        .map_err(|error| AppError::Runtime(anyhow::Error::from(error)))?;
+
+    if new_password != confirmation {
+        return Err(AppError::Runtime(anyhow::anyhow!("passwords do not match")));
+    }
+
+    auth::set_password_offline(&config.keys_dir, old_password.as_deref(), &new_password)
+        .map_err(AppError::Runtime)?;
+
+    println!("password changed; all clients must authenticate again");
+    Ok(())
 }
 
 async fn run_admin(config: &Config, command: &str) -> Result<(), AppError> {

@@ -16,6 +16,9 @@ pub const PROTOCOL_VERSION: u16 = 1;
 /// ALPN used for JSON control and metadata requests.
 pub const ALPN_JSON: &[u8] = b"/aiqiezi-json/1";
 
+/// ALPN used for bootstrap login and password changes.
+pub const ALPN_AUTH: &[u8] = b"/aiqiezi-auth/1";
+
 pub mod error_codes {
     pub const INVALID_REQUEST: &str = "invalid_request";
     pub const INVALID_JSON: &str = "invalid_json";
@@ -29,6 +32,12 @@ pub mod error_codes {
     pub const ENDPOINT_UNAVAILABLE: &str = "endpoint_unavailable";
     pub const SHUTTING_DOWN: &str = "shutting_down";
     pub const INTERNAL: &str = "internal";
+    pub const INVALID_CREDENTIALS: &str = "invalid_credentials";
+    pub const PASSWORD_CHANGE_REQUIRED: &str = "password_change_required";
+    pub const WEAK_PASSWORD: &str = "weak_password";
+    pub const PASSWORD_UNCHANGED: &str = "password_unchanged";
+    pub const RATE_LIMITED: &str = "rate_limited";
+    pub const AUTH_UNAVAILABLE: &str = "auth_unavailable";
 }
 
 /// One JSON Lines request.

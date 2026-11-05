@@ -16,6 +16,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
 use tracing::{info, warn};
 
+use crate::auth::AuthState;
 use crate::lock::create_runtime_dir;
 use crate::shutdown::Shutdown;
 use crate::version;
@@ -25,14 +26,16 @@ pub struct AdminState {
     pub endpoint_id: EndpointId,
     pub started: Instant,
     pub shutdown: Shutdown,
+    pub auth: AuthState,
 }
 
 impl AdminState {
-    pub fn new(endpoint_id: EndpointId, shutdown: Shutdown) -> Self {
+    pub fn new(endpoint_id: EndpointId, shutdown: Shutdown, auth: AuthState) -> Self {
         Self {
             endpoint_id,
             started: Instant::now(),
             shutdown,
+            auth,
         }
     }
 
@@ -46,7 +49,12 @@ impl AdminState {
             "database": {"status": "not_configured"},
             "migrations": {"status": "not_configured"},
             "media_storage": {"status": "not_configured"},
-            "enabled_clients": Value::Null,
+            "auth": {
+                "mode": "password",
+                "password_change_required": self.auth.must_change_password(),
+                "enabled_clients": self.auth.client_count(),
+            },
+            "enabled_clients": self.auth.client_count(),
         })
     }
 
@@ -58,6 +66,7 @@ impl AdminState {
                 "daemon": "ok",
                 "admin_socket": "ok",
                 "iroh_endpoint": "ok",
+                "auth": "ok",
                 "database": "not_configured",
                 "migrations": "not_configured",
                 "media_storage": "not_configured",
@@ -233,6 +242,7 @@ fn handle_line(state: &AdminState, line: &str) -> (Response, bool) {
 #[cfg(test)]
 mod tests {
     use super::{handle_line, AdminServer, AdminState};
+    use crate::auth::{AuthState, BOOTSTRAP_TEST_PASSWORD};
     use crate::shutdown::Shutdown;
     use aiqiezi_proto::{error_codes, Response, PROTOCOL_VERSION};
     use std::time::Instant;
@@ -240,10 +250,14 @@ mod tests {
 
     fn state() -> AdminState {
         let key = iroh::SecretKey::generate();
+        let auth_dir = tempfile::tempdir().unwrap();
+        let auth =
+            AuthState::load_or_initialize(auth_dir.path(), Some(BOOTSTRAP_TEST_PASSWORD)).unwrap();
         AdminState {
             endpoint_id: key.public(),
             started: Instant::now(),
             shutdown: Shutdown::new(),
+            auth,
         }
     }
 
@@ -260,8 +274,12 @@ mod tests {
         let data = response.data.unwrap();
         assert_eq!(data["endpoint_id"], state.endpoint_id.to_string());
         assert_eq!(data["database"]["status"], "not_configured");
+        assert_eq!(data["auth"]["mode"], "password");
+        assert_eq!(data["auth"]["password_change_required"], true);
+        assert_eq!(data["auth"]["enabled_clients"], 0);
         assert!(data.get("database_url").is_none());
         assert!(data.get("relay_token").is_none());
+        assert!(data.get("password_hash").is_none());
     }
 
     #[test]

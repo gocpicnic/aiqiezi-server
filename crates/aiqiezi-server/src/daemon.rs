@@ -27,7 +27,11 @@ pub async fn run(config: &Config) -> anyhow::Result<()> {
     let running_endpoint = endpoint::start(config).await?;
     let admin = match AdminServer::bind(
         config.admin_socket_path(),
-        AdminState::new(running_endpoint.id(), shutdown.clone()),
+        AdminState::new(
+            running_endpoint.id(),
+            shutdown.clone(),
+            running_endpoint.auth(),
+        ),
     ) {
         Ok(admin) => admin,
         Err(error) => {
