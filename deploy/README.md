@@ -118,7 +118,14 @@ Get the server EndpointId for the client configuration:
 docker compose exec -T aiqiezi-server aiqiezi-server whoami
 ```
 
-On the client, log in with `AIQIEZI_BOOTSTRAP_PASSWORD` and change it:
+On the client, configure the server EndpointId and start the local daemon:
+
+```bash
+aiqiezi set-server <server-endpoint-id>
+aiqiezi start
+```
+
+In another terminal, log in with `AIQIEZI_BOOTSTRAP_PASSWORD` and change it:
 
 ```bash
 aiqiezi login

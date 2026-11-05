@@ -126,6 +126,10 @@ First enrollment:
 docker compose exec -T aiqiezi-server aiqiezi-server whoami
 
 # On the client
+aiqiezi set-server <server-endpoint-id>
+aiqiezi start
+
+# In another terminal
 aiqiezi login
 aiqiezi change-password
 aiqiezi whoami
