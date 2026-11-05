@@ -109,8 +109,9 @@ Initial client enrollment uses a bootstrap password configured on the server:
 AIQIEZI_BOOTSTRAP_PASSWORD
 ```
 
-The first login returns `password_change_required`. The client must change the
-password over `/aiqiezi-auth/1` before it is enrolled. The password change
+The first login returns `password_change_required`, and the CLI exits nonzero
+in that state. The client must change the password over `/aiqiezi-auth/1`
+before it is enrolled. The password change
 stores only an Argon2id hash, clears the whitelist, and enrolls the caller's
 EndpointId. After that change, the bootstrap value is ignored.
 

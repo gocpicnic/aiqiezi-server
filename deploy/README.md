@@ -132,9 +132,9 @@ aiqiezi login
 aiqiezi change-password
 ```
 
-The first login returns `password_change_required` and does not grant access.
-The password change enrolls the client EndpointId in the server whitelist. No
-terminal on the server host is required.
+The first login returns `password_change_required` and exits nonzero; it does
+not grant access. The password change enrolls the client EndpointId in the
+server whitelist. No terminal on the server host is required.
 
 Do not edit `keys/auth.json` manually. Use `change-password` from a client or
 the offline `set-password` command.
