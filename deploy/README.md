@@ -35,8 +35,10 @@ image tag also includes the current UTC build timestamp, for example:
 ghcr.io/gocpicnic/aiqiezi-server:v0.1.0-20261104123045
 ```
 
-Record the exact tag printed by the build and use it as `AIQIEZI_TAG` in the
-production `.env`. Never deploy `latest` to production.
+The same build also tags `ghcr.io/gocpicnic/aiqiezi-server:latest` for manual
+and development testing. Record the exact dated tag printed by the build and
+use it as `AIQIEZI_TAG` in the production `.env`. Never deploy `latest` to
+production.
 
 If needed, override the Cargo-derived version explicitly:
 

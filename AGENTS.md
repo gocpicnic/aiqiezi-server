@@ -146,6 +146,9 @@ create table clients (
 
 - Server binary is compiled outside Docker for
   `x86_64-unknown-linux-musl`.
+- Every image build tags both the dated tag and `latest`.
+- `latest` is for manual/development testing only; production deployments use
+  the dated immutable tag.
 - Runtime image is Debian slim with `tini` and `gosu`; Rust is not built in
   the image.
 - The entrypoint starts as root only for initialization.

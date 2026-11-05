@@ -11,25 +11,28 @@ RUNTIME_DIR ?= ./data/run
 IMAGE_REPO ?= ghcr.io/gocpicnic/aiqiezi-server
 APP_VERSION ?= v$(CARGO_VERSION)
 IMAGE_TAG ?= $(APP_VERSION)-$(BUILD_DATE)
+LATEST_TAG ?= latest
 DOCKER_PLATFORM ?= linux/amd64
 IMAGE_TAR_DIR ?= imagefiles
 IMAGE := $(IMAGE_REPO):$(IMAGE_TAG)
+LATEST_IMAGE := $(IMAGE_REPO):$(LATEST_TAG)
 
 .DEFAULT_GOAL := help
 
 # Declare all targets as PHONY.
 .PHONY: help env check-env build build-static setup-musl run run-debug version \
-	status healthcheck shutdown docker-image docker-push docker-save \
-	check-image-version fmt fmt-check check test clippy ci clean
+	status healthcheck shutdown docker-image docker-push docker-push-latest \
+	docker-save check-image-version fmt fmt-check check test clippy ci clean
 
 help:
 	@printf 'Usage:\n'
 	@printf '  make env          Create %s from .env.example if needed\n' "$(ENV_FILE)"
 	@printf '  make build        Build the release server binary\n'
 	@printf '  make build-static Build the static musl binary into dist/\n'
-	@printf '  make docker-image Build the server image using the Cargo version\n'
-	@printf '  make docker-push  Build and push the server image to $(IMAGE_REPO)\n'
-	@printf '  make docker-save  Build and save the server image tar into imagefiles/\n'
+	@printf '  make docker-image Build the dated and latest server images\n'
+	@printf '  make docker-push  Build and push the dated image to $(IMAGE_REPO)\n'
+	@printf '  make docker-push-latest  Build and push the latest image\n'
+	@printf '  make docker-save  Build and save both image tags into imagefiles/\n'
 	@printf '  make run          Build and run the server with %s\n' "$(ENV_FILE)"
 	@printf '  make run-debug    Run the server through cargo without release optimization\n'
 	@printf '  make status       Query the running daemon status\n'
@@ -72,8 +75,11 @@ build-static: setup-musl
 	cp "target/$(MUSL_TARGET)/release/aiqiezi-server" dist/aiqiezi-server
 
 docker-image: check-image-version build-static
-	@printf 'Building image: %s\n' "$(IMAGE)"
-	docker build --platform "$(DOCKER_PLATFORM)" -t "$(IMAGE)" .
+	@printf 'Building image: %s (latest: %s)\n' "$(IMAGE)" "$(LATEST_IMAGE)"
+	docker build --platform "$(DOCKER_PLATFORM)" \
+		-t "$(IMAGE)" \
+		-t "$(LATEST_IMAGE)" \
+		.
 
 check-image-version:
 	@test -n "$(APP_VERSION)" || { \
@@ -85,9 +91,14 @@ check-image-version:
 docker-push: docker-image
 	docker push "$(IMAGE)"
 
+docker-push-latest: docker-image
+	docker push "$(LATEST_IMAGE)"
+
 docker-save: docker-image
 	mkdir -p "$(IMAGE_TAR_DIR)"
-	docker save -o "$(IMAGE_TAR_DIR)/aiqiezi-server-$(IMAGE_TAG).tar" "$(IMAGE)"
+	docker save -o "$(IMAGE_TAR_DIR)/aiqiezi-server-$(IMAGE_TAG).tar" \
+		"$(IMAGE)" \
+		"$(LATEST_IMAGE)"
 
 run: check-env build
 	@set -a; . "$(ENV_PATH)"; set +a; \

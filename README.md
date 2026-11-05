@@ -318,9 +318,17 @@ build timestamp, for example:
 ghcr.io/gocpicnic/aiqiezi-server:v0.1.0-20261104123045
 ```
 
-Use that exact tag in the production `AIQIEZI_TAG`.
+The build also tags the same image as:
 
-Use `make docker-save` when the remote server cannot pull from GHCR.
+```text
+ghcr.io/gocpicnic/aiqiezi-server:latest
+```
+
+`latest` is for manual and development testing only. Use the exact dated tag
+in the production `AIQIEZI_TAG`; never deploy `latest` to production.
+
+Use `make docker-save` when the remote server cannot pull from GHCR. The saved
+archive contains both the dated tag and `latest`.
 
 The runtime image uses Debian slim because the container entrypoint needs a
 shell, `tini`, and `gosu`. Rust compilation still happens outside Docker.
