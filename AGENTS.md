@@ -230,9 +230,14 @@ Initial enrollment uses the server bootstrap password:
 
 ```text
 AIQIEZI_BOOTSTRAP_PASSWORD   # deployed compose.yaml, first startup only
+whoami                       # server command, prints the server EndpointId
 login                        # client command over ALPN_AIQIEZI_AUTH
 change-password              # required after the first login
 ```
+
+`aiqiezi-server whoami` is read-only, prints only the persistent server
+EndpointId, and requires an existing server key. It never prints the endpoint
+ticket.
 
 The first `login` with the bootstrap password returns
 `password_change_required` and does not enroll the client. `change-password`
@@ -269,6 +274,7 @@ cargo fmt --all
 cargo clippy --workspace --all-targets -- -D warnings
 sqlx migrate run
 cargo run -p aiqiezi-server -- start
+cargo run -p aiqiezi-server -- whoami
 cargo run -p aiqiezi-server -- set-password
 ```
 

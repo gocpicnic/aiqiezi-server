@@ -122,11 +122,17 @@ First enrollment:
 ```bash
 # Set AIQIEZI_BOOTSTRAP_PASSWORD in the deployed compose.yaml first.
 
+# On the server: get the server EndpointId for client configuration
+docker compose exec -T aiqiezi-server aiqiezi-server whoami
+
 # On the client
 aiqiezi login
 aiqiezi change-password
 aiqiezi whoami
 ```
+
+`aiqiezi-server whoami` prints the **server** EndpointId.
+`aiqiezi whoami` prints the **client** EndpointId.
 
 The auth ALPN is accepted before enrollment. The JSON and blob ALPNs are
 accepted only for whitelisted EndpointIds. Clients must perform login and
@@ -173,10 +179,14 @@ a command in the existing running container:
 
 ```bash
 docker compose exec aiqiezi-server aiqiezi-server --version
+docker compose exec aiqiezi-server aiqiezi-server whoami
 docker compose exec aiqiezi-server aiqiezi-server status
 docker compose exec aiqiezi-server aiqiezi-server healthcheck
 docker compose exec aiqiezi-server aiqiezi-server shutdown
 ```
+
+`whoami` is read-only and prints only the server EndpointId. It requires the
+persistent server key to exist; start the server once before using it.
 
 Do not add the `run` subcommand to these commands. `docker compose run` starts
 a separate one-off container and is only used for operations such as
@@ -185,7 +195,9 @@ a separate one-off container and is only used for operations such as
 `shutdown` exits the process; with the Compose restart policy Docker may start
 it again. Use `docker compose stop aiqiezi-server` when it should stay stopped.
 
-`status`, `healthcheck`, and `shutdown` are implemented. Bootstrap login,
+`whoami`, `status`, `healthcheck`, and `shutdown` are implemented. `whoami`
+prints only the server EndpointId and requires an existing server key.
+Bootstrap login,
 `change-password`, Argon2id password storage, and the EndpointId firewall are
 implemented. Database, migration, and media-storage fields currently report
 `not_configured` or `database_unavailable` until Phase 2/3. The `client-add`,
@@ -375,6 +387,7 @@ Phase 1, Phase 1B, and bootstrap authentication are implemented:
   EndpointId whitelist enforcement at the iroh firewall
 - exclusive daemon instance lock
 - local Unix admin socket with restrictive permissions
+- read-only `whoami` command for the server EndpointId
 - `status`, `healthcheck`, and `shutdown` admin commands
 - Docker runtime image, Compose stack, and production deployment guide
 - in-process transport and lock/admin tests

@@ -43,6 +43,8 @@ enum Command {
     /// Start the server process in the foreground
     #[command(visible_alias = "run")]
     Start,
+    /// Print the server's persistent EndpointId
+    Whoami,
     /// Set or change the server password while the daemon is stopped
     SetPassword,
     /// Query the running daemon status
@@ -83,12 +85,19 @@ fn run(cli: Cli) -> Result<(), AppError> {
     runtime.block_on(async {
         match cli.command.unwrap_or(Command::Start) {
             Command::Start => daemon::run(&config).await.map_err(AppError::Runtime),
+            Command::Whoami => run_whoami(&config),
             Command::SetPassword => run_set_password(&config),
             Command::Status => run_admin(&config, "status").await,
             Command::Healthcheck => run_admin(&config, "healthcheck").await,
             Command::Shutdown => run_admin(&config, "shutdown").await,
         }
     })
+}
+
+fn run_whoami(config: &Config) -> Result<(), AppError> {
+    let key = endpoint::load_key(config).map_err(AppError::Runtime)?;
+    println!("{}", key.public());
+    Ok(())
 }
 
 fn run_set_password(config: &Config) -> Result<(), AppError> {

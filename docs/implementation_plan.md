@@ -538,6 +538,8 @@ Tests:
 Implement:
 
 - `start` as the primary foreground daemon command, with `run` as an alias;
+- `whoami` as a read-only command that prints only the persistent server
+  EndpointId and does not create a key;
 - `set-password` as an optional offline command that holds the instance lock,
   verifies the old password when present, and clears the whitelist.
 
@@ -959,12 +961,14 @@ Implement server subcommands used by deployment:
 
 ```text
 aiqiezi-server start
+aiqiezi-server whoami
 aiqiezi-server migrate
 aiqiezi-server migrate-status
 aiqiezi-server healthcheck
 ```
 
-`start` starts the normal server process; `run` remains an alias. The deploy
+`start` starts the normal server process; `run` remains an alias. `whoami`
+prints only the server EndpointId. The deploy
 script uses the other
 subcommands for migrations and readiness.
 

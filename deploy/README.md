@@ -112,6 +112,12 @@ The server uses host networking. PostgreSQL is not running.
 
 ## First client enrollment
 
+Get the server EndpointId for the client configuration:
+
+```bash
+docker compose exec -T aiqiezi-server aiqiezi-server whoami
+```
+
 On the client, log in with `AIQIEZI_BOOTSTRAP_PASSWORD` and change it:
 
 ```bash
@@ -144,6 +150,7 @@ docker compose up -d aiqiezi-server
 
 ```bash
 docker compose exec aiqiezi-server aiqiezi-server --version
+docker compose exec aiqiezi-server aiqiezi-server whoami
 docker compose exec aiqiezi-server aiqiezi-server status
 docker compose exec aiqiezi-server aiqiezi-server healthcheck
 ```

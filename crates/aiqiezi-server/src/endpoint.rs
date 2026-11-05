@@ -23,6 +23,19 @@ use crate::config::Config;
 use crate::firewall::AuthHooks;
 use crate::json::JsonHandler;
 
+/// Load the persistent endpoint key without creating one.
+pub fn load_key(config: &Config) -> anyhow::Result<SecretKey> {
+    let key_path = config.keys_dir.join("secret_key.bin");
+    if !key_path.exists() {
+        anyhow::bail!(
+            "server key not found at {}; start the server first",
+            key_path.display()
+        );
+    }
+
+    read_key(&key_path)
+}
+
 /// Load the persistent endpoint key, creating it on first start.
 pub fn load_or_create_key(config: &Config) -> anyhow::Result<SecretKey> {
     std::fs::create_dir_all(&config.keys_dir)
@@ -30,17 +43,7 @@ pub fn load_or_create_key(config: &Config) -> anyhow::Result<SecretKey> {
 
     let key_path = config.keys_dir.join("secret_key.bin");
     if key_path.exists() {
-        let bytes = std::fs::read(&key_path)
-            .with_context(|| format!("read endpoint key {}", key_path.display()))?;
-        let bytes: [u8; 32] = bytes.try_into().map_err(|bytes: Vec<u8>| {
-            anyhow::anyhow!(
-                "endpoint key {} has invalid length: expected 32 bytes, got {}",
-                key_path.display(),
-                bytes.len()
-            )
-        })?;
-        set_private_permissions(&key_path)?;
-        return Ok(SecretKey::from_bytes(&bytes));
+        return read_key(&key_path);
     }
 
     let key = SecretKey::generate();
@@ -48,6 +51,20 @@ pub fn load_or_create_key(config: &Config) -> anyhow::Result<SecretKey> {
         .with_context(|| format!("write endpoint key {}", key_path.display()))?;
     set_private_permissions(&key_path)?;
     Ok(key)
+}
+
+fn read_key(key_path: &Path) -> anyhow::Result<SecretKey> {
+    let bytes = std::fs::read(key_path)
+        .with_context(|| format!("read endpoint key {}", key_path.display()))?;
+    let bytes: [u8; 32] = bytes.try_into().map_err(|bytes: Vec<u8>| {
+        anyhow::anyhow!(
+            "endpoint key {} has invalid length: expected 32 bytes, got {}",
+            key_path.display(),
+            bytes.len()
+        )
+    })?;
+    set_private_permissions(key_path)?;
+    Ok(SecretKey::from_bytes(&bytes))
 }
 
 /// Save the endpoint ticket in a stable location for client onboarding.
@@ -234,7 +251,7 @@ pub async fn start(config: &Config) -> anyhow::Result<RunningEndpoint> {
 
 #[cfg(test)]
 mod tests {
-    use super::{load_or_create_key, save_endpoint_ticket};
+    use super::{load_key, load_or_create_key, save_endpoint_ticket};
     use crate::auth::{AuthState, BOOTSTRAP_TEST_PASSWORD};
     use crate::auth_handler::AuthHandler;
     use crate::config::Config;
@@ -436,6 +453,18 @@ mod tests {
         let second = load_or_create_key(&config).unwrap();
 
         assert_eq!(first.public(), second.public());
+    }
+
+    #[test]
+    fn load_key_requires_an_existing_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = config(dir.path());
+
+        assert!(load_key(&config).is_err());
+
+        let created = load_or_create_key(&config).unwrap();
+        let loaded = load_key(&config).unwrap();
+        assert_eq!(created.public(), loaded.public());
     }
 
     #[test]
