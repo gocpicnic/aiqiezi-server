@@ -9,8 +9,10 @@
 
 The current server provides the iroh endpoint, bootstrap password
 authentication, EndpointId whitelist enforcement, and the local admin socket.
-PostgreSQL is included in the stack for Phase 2, but the server does not use it
-yet.
+PostgreSQL is not part of the current stack; it will be added in Phase 2.
+
+Deployment uses one self-contained `compose.yaml`. The deployed file contains
+secrets, so set it to mode `0600` and never commit it.
 
 ## Supported host
 
@@ -28,30 +30,19 @@ Build the static binary and image on a development machine:
 make docker-push
 ```
 
-`APP_VERSION` is read from the `aiqiezi-server` Cargo package version. The
-image tag also includes the current UTC build timestamp, for example:
+`APP_VERSION` is read from the `aiqiezi-server` Cargo package version. Every
+build tags both a dated image and `latest`:
 
 ```text
 ghcr.io/gocpicnic/aiqiezi-server:v0.1.0-20261104123045
+ghcr.io/gocpicnic/aiqiezi-server:latest
 ```
 
-The same build also tags `ghcr.io/gocpicnic/aiqiezi-server:latest` for manual
-and development testing. Record the exact dated tag printed by the build and
-use it as `AIQIEZI_TAG` in the production `.env`. Never deploy `latest` to
-production.
-
-If needed, override the Cargo-derived version explicitly:
+The Compose file uses `latest` for simple NAS upgrades. Keep the dated tags for
+rollback. `make docker-push` publishes both tags. To refresh only `latest`:
 
 ```bash
-make docker-push APP_VERSION=v0.1.0-rc1
-```
-
-To build without pushing and push later, pass the exact tag explicitly:
-
-```bash
-make docker-image
-# copy the printed tag
-make docker-push IMAGE_TAG=v0.1.0-20261104123045
+make docker-push-latest
 ```
 
 If the server cannot pull from GHCR, save and copy the image instead:
@@ -68,43 +59,40 @@ On the remote server:
 docker load -i /tmp/aiqiezi-server-v0.1.0-20261104123045.tar
 ```
 
+The saved archive contains both the dated tag and `latest`.
+
 ## Deploy on the remote server
 
-Create the deployment directory and copy the deployment files:
+Create the deployment directory and copy `compose.yaml`:
 
 ```bash
-mkdir -p /mnt/data/aiqiezi/deploy
-cd /mnt/data/aiqiezi/deploy
-```
-
-Copy `compose.yaml` and `deploy/.env.example` from this repository:
-
-```bash
+mkdir -p /mnt/data/aiqiezi
+cd /mnt/data/aiqiezi
 cp /path/to/aiqiezi-server/compose.yaml .
-cp /path/to/aiqiezi-server/deploy/.env.example .env
-chmod 600 .env
+chmod 600 compose.yaml
 ```
 
-Edit `.env` and replace every placeholder value. Set:
+Edit `compose.yaml` directly. Replace every placeholder value, especially:
 
 ```text
-AIQIEZI_TAG
 AIQIEZI_UID
 AIQIEZI_GID
-AIQIEZI_DATABASE_URL
 AIQIEZI_BOOTSTRAP_PASSWORD
-POSTGRES_PASSWORD
 ```
-
-`AIQIEZI_TAG` must be the exact tag printed by `make docker-push` or
-`make docker-save`, including the timestamp suffix. The PostgreSQL password
-must match `AIQIEZI_DATABASE_URL`. Use a URL-safe password or percent-encode it
-in the URL.
 
 `AIQIEZI_BOOTSTRAP_PASSWORD` is used only when no password hash exists. It must
 meet the password policy: 8-128 characters with uppercase, lowercase, digit,
 and special character. The first client login must change it. After that
 change, the value is ignored.
+
+The default image is:
+
+```text
+ghcr.io/gocpicnic/aiqiezi-server:latest
+```
+
+For a pinned deployment, replace it with the exact dated tag printed by the
+build.
 
 If using GHCR:
 
@@ -112,16 +100,15 @@ If using GHCR:
 docker login ghcr.io
 ```
 
-Start the stack:
+Validate and start the stack:
 
 ```bash
-docker compose pull
+docker compose config
 docker compose up -d
 docker compose ps
 ```
 
-The server uses host networking. PostgreSQL is published only on
-`127.0.0.1:5432`; it is not exposed to the public network.
+The server uses host networking. PostgreSQL is not running.
 
 ## First client enrollment
 
@@ -141,8 +128,8 @@ the offline `set-password` command.
 
 If the password is lost, stop the server, remove
 `/mnt/data/aiqiezi/keys/auth.json`, set a new
-`AIQIEZI_BOOTSTRAP_PASSWORD`, and start the server again. This clears the
-whitelist; every client must enroll again.
+`AIQIEZI_BOOTSTRAP_PASSWORD` in `compose.yaml`, and start the server again.
+This clears the whitelist; every client must enroll again.
 
 Alternatively, terminal users can run the offline command while the server is
 stopped:
@@ -169,7 +156,6 @@ Logs:
 
 ```bash
 docker compose logs -f aiqiezi-server
-docker compose logs -f postgres
 ```
 
 Stop the service cleanly:
@@ -187,35 +173,36 @@ not exposed over TCP or iroh.
 
 ## Update and rollback
 
-Use the exact dated image tag for every deployment:
+The default Compose file uses `latest`:
 
 ```bash
-# set AIQIEZI_TAG in .env to the new vX.Y.Z-YYYYMMDDHHMMSS tag
 docker compose pull aiqiezi-server
 docker compose up -d aiqiezi-server
 ```
 
-Rollback by setting the previous tag in `.env`, then repeating the pull and
-recreate commands. Database migrations are not automatic and are not rolled
-back with the image; use backward-compatible migrations once Phase 2 is
-implemented.
+For an offline image transfer:
+
+```bash
+docker load -i /tmp/aiqiezi-server-<tag>.tar
+docker compose up -d --force-recreate aiqiezi-server
+```
+
+Rollback by changing the image line in `compose.yaml` to the previous dated tag,
+then pulling or loading that image and recreating the container. PostgreSQL
+migrations do not exist yet; Phase 2 will define them.
 
 ## Data layout
 
-Application data is mounted individually so the server cannot access the
-PostgreSQL data directory:
+Application data is mounted individually:
 
 ```text
 /mnt/data/aiqiezi/media  -> /data/media
 /mnt/data/aiqiezi/keys   -> /data/keys
 /mnt/data/aiqiezi/config -> /data/config
-/mnt/data/aiqiezi/postgres -> PostgreSQL data
 ```
 
-The entrypoint creates and chowns the application directories. PostgreSQL
-owns its own data directory. If PostgreSQL reports an ownership error, a
-one-time host-side `chown 999:999 /mnt/data/aiqiezi/postgres` is acceptable;
-this is troubleshooting, not a required setup step.
+The entrypoint creates and chowns the application directories. PostgreSQL will
+get its own data directory when it is added in Phase 2.
 
 Back up the iroh key and `keys/auth.json`. Losing the iroh key changes the
 server EndpointId; losing `auth.json` forces a bootstrap-password reset and

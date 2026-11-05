@@ -1,6 +1,7 @@
 SHELL := /bin/bash
 
 CARGO ?= cargo
+# Optional local-development overrides. Production uses compose.yaml only.
 ENV_FILE ?= .env
 ENV_PATH := $(abspath $(ENV_FILE))
 BIN := target/release/aiqiezi-server
@@ -20,20 +21,19 @@ LATEST_IMAGE := $(IMAGE_REPO):$(LATEST_TAG)
 .DEFAULT_GOAL := help
 
 # Declare all targets as PHONY.
-.PHONY: help env check-env build build-static setup-musl run run-debug version \
+.PHONY: help build build-static setup-musl run run-debug version \
 	status healthcheck shutdown docker-image docker-push docker-push-latest \
 	docker-save check-image-version fmt fmt-check check test clippy ci clean
 
 help:
 	@printf 'Usage:\n'
-	@printf '  make env          Create %s from .env.example if needed\n' "$(ENV_FILE)"
 	@printf '  make build        Build the release server binary\n'
 	@printf '  make build-static Build the static musl binary into dist/\n'
 	@printf '  make docker-image Build the dated and latest server images\n'
-	@printf '  make docker-push  Build and push the dated image to $(IMAGE_REPO)\n'
-	@printf '  make docker-push-latest  Build and push the latest image\n'
+	@printf '  make docker-push  Build and push the dated and latest images\n'
+	@printf '  make docker-push-latest  Build and push only the latest image\n'
 	@printf '  make docker-save  Build and save both image tags into imagefiles/\n'
-	@printf '  make run          Build and run the server with %s\n' "$(ENV_FILE)"
+	@printf '  make run          Build and run the server\n'
 	@printf '  make run-debug    Run the server through cargo without release optimization\n'
 	@printf '  make status       Query the running daemon status\n'
 	@printf '  make healthcheck  Check the running daemon health\n'
@@ -46,20 +46,6 @@ help:
 	@printf '  make clippy       Run clippy with warnings denied\n'
 	@printf '  make ci           Run all checks used by CI\n'
 	@printf '  make clean        Remove build artifacts\n'
-
-env:
-	@if [ -f "$(ENV_FILE)" ]; then \
-		echo "$(ENV_FILE) already exists"; \
-	else \
-		cp .env.example "$(ENV_FILE)"; \
-		echo "created $(ENV_FILE); edit it before running the server"; \
-	fi
-
-check-env:
-	@if [ ! -f "$(ENV_PATH)" ]; then \
-		echo "error: $(ENV_FILE) is missing; run 'make env' first" >&2; \
-		exit 1; \
-	fi
 
 build:
 	BUILD_DATE="$(BUILD_DATE)" $(CARGO) build --release --locked -p aiqiezi-server
@@ -90,6 +76,7 @@ check-image-version:
 
 docker-push: docker-image
 	docker push "$(IMAGE)"
+	docker push "$(LATEST_IMAGE)"
 
 docker-push-latest: docker-image
 	docker push "$(LATEST_IMAGE)"
@@ -100,28 +87,33 @@ docker-save: docker-image
 		"$(IMAGE)" \
 		"$(LATEST_IMAGE)"
 
-run: check-env build
-	@set -a; . "$(ENV_PATH)"; set +a; \
+run: build
+	@set -a; if [ -f "$(ENV_PATH)" ]; then . "$(ENV_PATH)"; fi; set +a; \
+		export AIQIEZI_DATABASE_URL="$${AIQIEZI_DATABASE_URL:-postgres://unused:unused@127.0.0.1/unused}"; \
 		export AIQIEZI_RUNTIME_DIR="$${AIQIEZI_RUNTIME_DIR:-$(RUNTIME_DIR)}"; \
 		exec "./$(BIN)" start
 
-run-debug: check-env
-	@set -a; . "$(ENV_PATH)"; set +a; \
+run-debug:
+	@set -a; if [ -f "$(ENV_PATH)" ]; then . "$(ENV_PATH)"; fi; set +a; \
+		export AIQIEZI_DATABASE_URL="$${AIQIEZI_DATABASE_URL:-postgres://unused:unused@127.0.0.1/unused}"; \
 		export AIQIEZI_RUNTIME_DIR="$${AIQIEZI_RUNTIME_DIR:-$(RUNTIME_DIR)}"; \
 		BUILD_DATE="$(BUILD_DATE)" exec $(CARGO) run -p aiqiezi-server -- start
 
-status: check-env build
-	@set -a; . "$(ENV_PATH)"; set +a; \
+status: build
+	@set -a; if [ -f "$(ENV_PATH)" ]; then . "$(ENV_PATH)"; fi; set +a; \
+		export AIQIEZI_DATABASE_URL="$${AIQIEZI_DATABASE_URL:-postgres://unused:unused@127.0.0.1/unused}"; \
 		export AIQIEZI_RUNTIME_DIR="$${AIQIEZI_RUNTIME_DIR:-$(RUNTIME_DIR)}"; \
 		exec "./$(BIN)" status
 
-healthcheck: check-env build
-	@set -a; . "$(ENV_PATH)"; set +a; \
+healthcheck: build
+	@set -a; if [ -f "$(ENV_PATH)" ]; then . "$(ENV_PATH)"; fi; set +a; \
+		export AIQIEZI_DATABASE_URL="$${AIQIEZI_DATABASE_URL:-postgres://unused:unused@127.0.0.1/unused}"; \
 		export AIQIEZI_RUNTIME_DIR="$${AIQIEZI_RUNTIME_DIR:-$(RUNTIME_DIR)}"; \
 		exec "./$(BIN)" healthcheck
 
-shutdown: check-env build
-	@set -a; . "$(ENV_PATH)"; set +a; \
+shutdown: build
+	@set -a; if [ -f "$(ENV_PATH)" ]; then . "$(ENV_PATH)"; fi; set +a; \
+		export AIQIEZI_DATABASE_URL="$${AIQIEZI_DATABASE_URL:-postgres://unused:unused@127.0.0.1/unused}"; \
 		export AIQIEZI_RUNTIME_DIR="$${AIQIEZI_RUNTIME_DIR:-$(RUNTIME_DIR)}"; \
 		exec "./$(BIN)" shutdown
 

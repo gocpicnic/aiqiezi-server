@@ -52,7 +52,7 @@ architecture, deployment model, and non-goals.
 
 ```text
 Rust edition:       2021
-PostgreSQL:         17
+PostgreSQL:         17 (Phase 2; not in current Compose stack)
 Content hash:       BLAKE3
 Asset ID:           UUID
 Search:             PostgreSQL FTS + jieba-rs + pg_trgm
@@ -62,9 +62,9 @@ Server build:       x86_64-unknown-linux-musl, built outside Docker
 Server runtime:     Debian slim + tini + gosu entrypoint
 Container user:     AIQIEZI_UID/AIQIEZI_GID, default 1000:1000
 Container startup:  root entrypoint initializes and drops privileges
-Setup script:       not required; compose.yaml + .env only
+Setup script:       not required; one self-contained compose.yaml
 Server network:     host network
-PostgreSQL network: private bridge, 127.0.0.1:5432
+PostgreSQL network: not configured until Phase 2
 Data directory:     /mnt/data/aiqiezi
 Daemon model:       one process, two listeners
 Admin transport:    Unix domain socket /run/aiqiezi/admin.sock
@@ -120,7 +120,6 @@ Add or verify:
 ```text
 LICENSE
 .gitignore
-.env.example
 ```
 
 Acceptance:
@@ -893,23 +892,33 @@ FFmpeg and video processing will live in a separate media-worker image later.
 
 ### Step 7.2 — Compose stack
 
-Services:
+The current stack contains only `aiqiezi-server`, configured by one
+self-contained `compose.yaml` with inline environment values. PostgreSQL is
+added in Phase 2; the requirements below describe that future stack.
+
+Current services:
 
 ```text
 aiqiezi-server
+```
+
+Phase 2 adds:
+
+```text
 postgres
 ```
 
 Requirements:
 
 - server uses host networking;
-- server image is `ghcr.io/gocpicnic/aiqiezi-server:<version>`;
-- runtime UID/GID is supplied by environment:
+- server image is `ghcr.io/gocpicnic/aiqiezi-server:latest`, with dated tags
+  kept for rollback;
+- runtime UID/GID is supplied inline in `compose.yaml`:
 
 ```yaml
 environment:
-  AIQIEZI_UID: "${AIQIEZI_UID:-1000}"
-  AIQIEZI_GID: "${AIQIEZI_GID:-1000}"
+  AIQIEZI_UID: "1000"
+  AIQIEZI_GID: "1000"
 ```
 
 - the entrypoint creates and chowns only app-owned directories;

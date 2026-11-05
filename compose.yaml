@@ -1,26 +1,38 @@
 name: aiqiezi
 
+# Self-contained deployment file.
+#
+# Copy this file to the deployment directory, replace the placeholder values,
+# and run `docker compose up -d`. The filled-in file contains secrets: set it
+# to mode 0600 and never commit it.
+#
+# PostgreSQL is not part of the current stack. It will be added in Phase 2.
+
 services:
   aiqiezi-server:
-    image: "${AIQIEZI_IMAGE:-ghcr.io/gocpicnic/aiqiezi-server}:${AIQIEZI_TAG:?Set AIQIEZI_TAG in .env}"
+    image: ghcr.io/gocpicnic/aiqiezi-server:latest
     container_name: aiqiezi-server
     network_mode: host
     restart: unless-stopped
     stop_grace_period: 20s
-    env_file:
-      - .env
     environment:
-      AIQIEZI_UID: "${AIQIEZI_UID:-1000}"
-      AIQIEZI_GID: "${AIQIEZI_GID:-1000}"
+      AIQIEZI_UID: "1000"
+      AIQIEZI_GID: "1000"
       AIQIEZI_DATA_DIR: /data
       AIQIEZI_RUNTIME_DIR: /run/aiqiezi
+      AIQIEZI_BOOTSTRAP_PASSWORD: "ChangeMe-123!"
+      # Reserved for Phase 2; the current server only validates the URL.
+      AIQIEZI_DATABASE_URL: "postgres://unused:unused@127.0.0.1/unused"
+      AIQIEZI_LOG_LEVEL: info
+      # Optional iroh settings:
+      # AIQIEZI_RELAY_URL: ""
+      # AIQIEZI_RELAY_TOKEN: ""
+      # AIQIEZI_DNS_SERVER: ""
+      # AIQIEZI_BIND_ADDR: ""
     volumes:
       - /mnt/data/aiqiezi/media:/data/media
       - /mnt/data/aiqiezi/keys:/data/keys
       - /mnt/data/aiqiezi/config:/data/config
-    depends_on:
-      postgres:
-        condition: service_healthy
     healthcheck:
       test: ["CMD", "/usr/local/bin/aiqiezi-server", "status"]
       interval: 30s
@@ -32,34 +44,3 @@ services:
       options:
         max-size: "10m"
         max-file: "5"
-
-  postgres:
-    image: postgres:17
-    container_name: aiqiezi-postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: "${POSTGRES_DB:-aiqiezi}"
-      POSTGRES_USER: "${POSTGRES_USER:-aiqiezi}"
-      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}"
-      PGDATA: /var/lib/postgresql/data/pgdata
-    volumes:
-      - /mnt/data/aiqiezi/postgres:/var/lib/postgresql/data
-    ports:
-      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
-    networks:
-      - database
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 20s
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "5"
-
-networks:
-  database:
-    driver: bridge

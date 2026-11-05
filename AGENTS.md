@@ -147,8 +147,12 @@ create table clients (
 - Server binary is compiled outside Docker for
   `x86_64-unknown-linux-musl`.
 - Every image build tags both the dated tag and `latest`.
-- `latest` is for manual/development testing only; production deployments use
-  the dated immutable tag.
+- Compose uses `latest` for simple NAS upgrades; keep dated tags for rollback.
+- The Compose deployment is one self-contained `compose.yaml` with inline
+  environment values. Do not add an `env_file` or require a `.env`.
+- The deployed `compose.yaml` contains secrets and must be mode `0600`; never
+  commit the filled-in copy.
+- PostgreSQL is not part of the current Compose stack; add it back in Phase 2.
 - Runtime image is Debian slim with `tini` and `gosu`; Rust is not built in
   the image.
 - The entrypoint starts as root only for initialization.
@@ -200,8 +204,9 @@ create table clients (
 ## Security rules
 
 - Never commit keys, relay tokens, database dumps, or media.
-- Keep the bootstrap password in `AIQIEZI_BOOTSTRAP_PASSWORD` in `.env`, not in
-  the repository. Never log it or return it in a response.
+- Keep the bootstrap password in `AIQIEZI_BOOTSTRAP_PASSWORD` in the deployed
+  `compose.yaml`, not in the repository. Never log it or return it in a
+  response.
 - Store only the Argon2id password hash. Use `spawn_blocking` for hashing and
   verification.
 - Rate-limit failed login attempts per EndpointId.
@@ -224,7 +229,7 @@ create table clients (
 Initial enrollment uses the server bootstrap password:
 
 ```text
-AIQIEZI_BOOTSTRAP_PASSWORD   # .env, first startup only
+AIQIEZI_BOOTSTRAP_PASSWORD   # deployed compose.yaml, first startup only
 login                        # client command over ALPN_AIQIEZI_AUTH
 change-password              # required after the first login
 ```

@@ -119,7 +119,7 @@ persistent iroh EndpointId and authorized by the server whitelist.
 First enrollment:
 
 ```bash
-# Set AIQIEZI_BOOTSTRAP_PASSWORD in the server .env first.
+# Set AIQIEZI_BOOTSTRAP_PASSWORD in the deployed compose.yaml first.
 
 # On the client
 aiqiezi login
@@ -206,15 +206,9 @@ docker compose up -d aiqiezi-server
 Compose users normally use `change-password` from the client instead and do not
 need a terminal on the server host.
 
-Migrations are a one-shot operation outside the running daemon:
-
-```bash
-docker compose stop aiqiezi-server
-docker compose run --rm aiqiezi-server aiqiezi-server migrate
-docker compose up -d aiqiezi-server
-```
-
-The daemon refuses to start when migrations are pending.
+PostgreSQL migrations are not implemented yet, and PostgreSQL is not part of
+the current stack. Phase 2 will add them as a one-shot operation outside the
+running daemon; the daemon will refuse to start when migrations are pending.
 
 ## Data layout
 
@@ -223,13 +217,14 @@ Production data lives outside the repository:
 ```text
 /mnt/data/aiqiezi/
 ├── media/
-├── postgres/
 ├── keys/
 │   └── auth.json       # Argon2id hash + temporary client whitelist
 ├── config/
 ├── backups/
 └── logs/
 ```
+
+PostgreSQL is not part of the current stack; it will be added in Phase 2.
 
 Runtime-only files:
 
@@ -258,8 +253,8 @@ cargo clippy --workspace --all-targets -- -D warnings
 Or use the Makefile:
 
 ```bash
-make env       # create .env from .env.example once
-# edit .env with your data directory and database URL
+export AIQIEZI_BOOTSTRAP_PASSWORD='ChangeMe-123!'
+export AIQIEZI_DATABASE_URL='postgres://unused:unused@127.0.0.1/unused'
 make run       # build and run the server
 ```
 
@@ -286,7 +281,7 @@ make version
 Run the daemon manually:
 
 ```bash
-AIQIEZI_DATABASE_URL='postgres://user:pass@127.0.0.1/aiqiezi' \
+AIQIEZI_DATABASE_URL='postgres://unused:unused@127.0.0.1/unused' \
 AIQIEZI_BOOTSTRAP_PASSWORD='ChangeMe-123!' \
 AIQIEZI_RUNTIME_DIR='./data/run' \
   cargo run -p aiqiezi-server -- start
@@ -330,8 +325,8 @@ The build also tags the same image as:
 ghcr.io/gocpicnic/aiqiezi-server:latest
 ```
 
-`latest` is for manual and development testing only. Use the exact dated tag
-in the production `AIQIEZI_TAG`; never deploy `latest` to production.
+The Compose file uses `latest` for simple NAS upgrades. Keep the dated tags
+for rollback.
 
 Use `make docker-save` when the remote server cannot pull from GHCR. The saved
 archive contains both the dated tag and `latest`.
@@ -353,16 +348,16 @@ AIQIEZI_UID=1000
 AIQIEZI_GID=1000
 ```
 
-Users with a different host UID/GID set these values in `.env`. No setup script
-is required. The entrypoint never touches PostgreSQL data.
+Users with a different host UID/GID set `AIQIEZI_UID` and `AIQIEZI_GID` in
+the deployed `compose.yaml`. No setup script is required.
 
 Initial target is `linux/amd64` on a Linux Docker Engine host. ARM64 support is
 deferred until there is a real ARM deployment target. Docker Desktop on macOS
 or Windows and native server builds on those platforms are not supported.
 
 Production Compose instructions are in [deploy/README.md](deploy/README.md).
-The stack uses host networking for the server, a private bridge for PostgreSQL,
-and mounts only the media, keys, and config directories into the app container.
+The current stack uses host networking and mounts only the media, keys, and
+config directories into the app container. PostgreSQL will be added in Phase 2.
 
 ## Status
 
