@@ -153,6 +153,13 @@ create table clients (
 - The deployed `compose.yaml` contains secrets and must be mode `0600`; never
   commit the filled-in copy.
 - PostgreSQL is not part of the current Compose stack; add it back in Phase 2.
+- Pushing a `v*` tag publishes the GHCR version, dated, and `latest` tags.
+- Tagged releases also publish a `docker save` archive, `compose.yaml`, and
+  `SHA256SUMS` as GitHub Release assets.
+- The release image is Linux/amd64 only; Windows and macOS server images are not
+  published.
+- Never include `.env` values, keys, auth state, database dumps, or media in
+  release assets.
 - Runtime image is Debian slim with `tini` and `gosu`; Rust is not built in
   the image.
 - The entrypoint starts as root only for initialization.

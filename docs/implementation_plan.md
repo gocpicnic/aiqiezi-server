@@ -1036,7 +1036,7 @@ require a separate maintenance procedure and a tested restore path.
 
 ### Step 7.6 — GitHub image publishing
 
-Add a release workflow for version tags:
+The release workflow triggers on version tags:
 
 ```text
 vX.Y.Z
@@ -1046,8 +1046,8 @@ Publish to GitHub Container Registry:
 
 ```text
 ghcr.io/gocpicnic/aiqiezi-server:vX.Y.Z
+ghcr.io/gocpicnic/aiqiezi-server:vX.Y.Z-YYYYMMDDHHMMSS
 ghcr.io/gocpicnic/aiqiezi-server:latest
-ghcr.io/gocpicnic/aiqiezi-server:sha-<commit>
 ```
 
 Build flow:
@@ -1057,16 +1057,17 @@ Build flow:
 2. cargo build --release --target x86_64-unknown-linux-musl
 3. copy binary to dist/
 4. docker build (Debian slim runtime + entrypoint)
-5. docker push to GHCR for main/version tags
+5. docker push to GHCR for version tags
+6. docker save the version, dated, and latest tags
+7. attach the image archive, compose.yaml, and SHA256SUMS to the GitHub Release
 ```
 
 Requirements:
 
-- pull requests build but do not push;
-- main builds and may push `main` and `sha-*` tags;
-- version tags create GitHub Releases;
+- release builds happen only for `v*` tags;
 - NAS/manual deployments use `latest`; keep dated tags for rollback;
-- never deploy `main` or `sha-*` tags;
+- publish an offline `docker save` archive for NAS hosts without GHCR access;
+- never deploy `main` or untagged images;
 - use `GITHUB_TOKEN` with least privilege;
 - no QEMU-based ARM builds initially;
 - ARM64 support, when needed, uses a native ARM64 runner in a build matrix;

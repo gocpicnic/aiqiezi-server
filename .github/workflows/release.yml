@@ -1,0 +1,96 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  IMAGE: ghcr.io/gocpicnic/aiqiezi-server
+
+jobs:
+  publish:
+    name: publish server image
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+          targets: x86_64-unknown-linux-musl
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+      - name: Install musl tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+      - name: Set build metadata
+        run: |
+          echo "BUILD_DATE=$(date -u +%Y%m%d%H%M%S)" >> "$GITHUB_ENV"
+          echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+      - name: Build static server binary
+        run: make build-static BUILD_DATE="$BUILD_DATE"
+      - name: Build Docker image
+        env:
+          VERSION_TAG: v${{ env.VERSION }}
+          DATED_TAG: v${{ env.VERSION }}-${{ env.BUILD_DATE }}
+        run: |
+          docker build --platform linux/amd64 \
+            -t "${IMAGE}:${VERSION_TAG}" \
+            -t "${IMAGE}:${DATED_TAG}" \
+            -t "${IMAGE}:latest" \
+            .
+      - name: Verify image
+        env:
+          VERSION_TAG: v${{ env.VERSION }}
+        run: docker run --rm "${IMAGE}:${VERSION_TAG}" --version
+      - name: Log in to GHCR
+        run: echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Push image tags
+        env:
+          VERSION_TAG: v${{ env.VERSION }}
+          DATED_TAG: v${{ env.VERSION }}-${{ env.BUILD_DATE }}
+        run: |
+          docker push "${IMAGE}:${VERSION_TAG}"
+          docker push "${IMAGE}:${DATED_TAG}"
+          docker push "${IMAGE}:latest"
+      - name: Export image archive
+        env:
+          VERSION_TAG: v${{ env.VERSION }}
+          DATED_TAG: v${{ env.VERSION }}-${{ env.BUILD_DATE }}
+        run: |
+          mkdir -p release
+          docker save \
+            "${IMAGE}:${VERSION_TAG}" \
+            "${IMAGE}:${DATED_TAG}" \
+            "${IMAGE}:latest" \
+            | gzip -9 > "release/aiqiezi-server-${VERSION}-linux-amd64.tar.gz"
+          cp compose.yaml release/compose.yaml
+          (cd release && sha256sum * > SHA256SUMS)
+      - name: Create or update GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "v${VERSION}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
+            gh release create "v${VERSION}" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "v${VERSION}" \
+              --notes "Release v${VERSION}"
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "v${VERSION}" release/* --repo "$GITHUB_REPOSITORY" --clobber

@@ -349,6 +349,32 @@ for rollback.
 Use `make docker-save` when the remote server cannot pull from GHCR. The saved
 archive contains both the dated tag and `latest`.
 
+Pushing a `v*` tag runs the GitHub Actions release workflow. It builds and
+publishes:
+
+```text
+ghcr.io/gocpicnic/aiqiezi-server:vX.Y.Z
+ghcr.io/gocpicnic/aiqiezi-server:vX.Y.Z-YYYYMMDDHHMMSS
+ghcr.io/gocpicnic/aiqiezi-server:latest
+```
+
+The same release includes an offline image archive:
+
+```text
+aiqiezi-server-X.Y.Z-linux-amd64.tar.gz
+compose.yaml
+SHA256SUMS
+```
+
+Load the archive on a NAS or offline host:
+
+```bash
+gunzip -c aiqiezi-server-X.Y.Z-linux-amd64.tar.gz | docker load
+docker compose up -d
+```
+
+The archive contains the version, dated version, and `latest` tags.
+
 The runtime image uses Debian slim because the container entrypoint needs a
 shell, `tini`, and `gosu`. Rust compilation still happens outside Docker.
 

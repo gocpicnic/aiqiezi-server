@@ -61,6 +61,28 @@ docker load -i /tmp/aiqiezi-server-v0.1.0-20261104123045.tar
 
 The saved archive contains both the dated tag and `latest`.
 
+## Release image archive
+
+Tagged releases publish an offline image archive, a `compose.yaml` template, and
+`SHA256SUMS` on the GitHub Release page.
+
+Download the archive and checksum file, verify them, then load the image:
+
+```bash
+sha256sum -c SHA256SUMS
+gunzip -c aiqiezi-server-X.Y.Z-linux-amd64.tar.gz | docker load
+```
+
+The archive restores the version, dated version, and `latest` tags. The current
+`compose.yaml` uses `latest`, so it works without editing the image line.
+
+If the host can reach GHCR, pulling is simpler:
+
+```bash
+docker compose pull aiqiezi-server
+docker compose up -d aiqiezi-server
+```
+
 ## Deploy on the remote server
 
 Create the deployment directory and copy `compose.yaml`:
