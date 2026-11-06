@@ -224,7 +224,11 @@ docker compose exec -it aiqiezi-server aiqiezi-server set-password
 The command sends the change to the running daemon over the admin socket. It
 verifies the current password and updates `keys/auth.json` immediately. By
 default all enrolled clients are cleared and must authenticate again with the
-new password. Add `--keep-clients` to keep existing enrolled clients authorized.
+new password. To keep existing enrolled clients authorized:
+
+```bash
+docker compose exec -it aiqiezi-server aiqiezi-server set-password --keep-clients
+```
 
 The offline path still exists for recovery when the daemon is stopped:
 

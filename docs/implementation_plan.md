@@ -549,6 +549,16 @@ Implement:
 - `set-password --offline` as a recovery path that holds the instance lock and
   requires the daemon to be stopped.
 
+Tests:
+
+- online password rotation updates the hash and status immediately;
+- `--keep-clients` preserves enrolled clients;
+- the default clears enrolled clients;
+- wrong, weak, and unchanged passwords are rejected;
+- a password change invalidates concurrent authentication with the old password;
+- the offline path fails while the daemon holds the instance lock;
+- passwords and hashes never appear in logs or responses.
+
 ## Phase 2 — PostgreSQL foundation
 
 ### Step 2.1 — Database connection

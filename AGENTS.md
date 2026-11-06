@@ -220,6 +220,8 @@ create table clients (
   response.
 - Store only the Argon2id password hash. Use `spawn_blocking` for hashing and
   verification.
+- The admin `set-password` path must verify the current password and must never
+  log or return password request parameters.
 - Rate-limit failed login attempts per EndpointId.
 - Auth state files live under the keys directory with `0600`; the keys
   directory uses `0700`.
@@ -322,6 +324,8 @@ For Markdown use an HTML comment with the same content.
   clients.
 - Test bootstrap login, `password_change_required`, password change, restart
   persistence, rate limiting, and weak-password rejection.
+- Test online admin `set-password`, `--keep-clients`, stale-password rejection,
+  and the offline lock fallback.
 - Test that passwords and hashes never appear in logs or responses.
 - Test that JSON and blob connections are rejected for unauthorized peers.
 - Test backup/restore procedures for metadata.
