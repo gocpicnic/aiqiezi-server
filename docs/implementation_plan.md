@@ -1057,16 +1057,18 @@ Build flow:
 2. cargo build --release --target x86_64-unknown-linux-musl
 3. copy binary to dist/
 4. docker build (Debian slim runtime + entrypoint)
-5. docker push to GHCR for version tags
-6. docker save the version, dated, and latest tags
-7. attach the image archive, compose.yaml, and SHA256SUMS to the GitHub Release
+5. docker save the version, dated, and latest tags
+6. attach the image archive, compose.yaml, and SHA256SUMS to the GitHub Release
+7. best-effort docker push to GHCR when package permissions are available
 ```
 
 Requirements:
 
 - release builds happen only for `v*` tags;
 - NAS/manual deployments use `latest`; keep dated tags for rollback;
-- publish an offline `docker save` archive for NAS hosts without GHCR access;
+- always publish the offline `docker save` archive for NAS hosts;
+- treat GHCR publishing as best-effort until package permissions and visibility
+  are configured;
 - never deploy `main` or untagged images;
 - use `GITHUB_TOKEN` with least privilege;
 - no QEMU-based ARM builds initially;

@@ -349,8 +349,8 @@ for rollback.
 Use `make docker-save` when the remote server cannot pull from GHCR. The saved
 archive contains both the dated tag and `latest`.
 
-Pushing a `v*` tag runs the GitHub Actions release workflow. It builds and
-publishes:
+Pushing a `v*` tag runs the GitHub Actions release workflow. It builds the
+offline image archive and attempts to publish these GHCR tags:
 
 ```text
 ghcr.io/gocpicnic/aiqiezi-server:vX.Y.Z
@@ -358,7 +358,10 @@ ghcr.io/gocpicnic/aiqiezi-server:vX.Y.Z-YYYYMMDDHHMMSS
 ghcr.io/gocpicnic/aiqiezi-server:latest
 ```
 
-The same release includes an offline image archive:
+GHCR publishing is best-effort until the package permissions and visibility are
+configured. The offline archive is always attached to the release.
+
+The release includes:
 
 ```text
 aiqiezi-server-X.Y.Z-linux-amd64.tar.gz
