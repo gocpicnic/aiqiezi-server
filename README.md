@@ -384,6 +384,11 @@ workflow and must be retried.
 The GHCR package may be private. To pull it on a server, authenticate first or
 make the package public in its GitHub package settings.
 
+If the release workflow fails while pushing with `permission_denied`, grant
+this repository write access to the existing package under the package's
+**Manage Actions access** settings, or add a `GHCR_TOKEN` Actions secret with
+`write:packages`. The workflow uses `GHCR_TOKEN` when it is present.
+
 The release includes:
 
 ```text

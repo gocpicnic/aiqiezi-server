@@ -160,6 +160,8 @@ create table clients (
   available if the registry push fails.
 - GHCR failure must fail the release workflow so it is visible; rerun the
   workflow after fixing registry access.
+- The workflow may use a repository secret named `GHCR_TOKEN` with
+  `write:packages` when the default `GITHUB_TOKEN` cannot access the package.
 - The GHCR package may be private. Document authentication for private pulls
   and never put registry tokens in the repository.
 - The release image is Linux/amd64 only; Windows and macOS server images are not
