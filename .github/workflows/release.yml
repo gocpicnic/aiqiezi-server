@@ -59,17 +59,6 @@ jobs:
         env:
           VERSION_TAG: v${{ env.VERSION }}
         run: docker run --rm "${IMAGE}:${VERSION_TAG}" --version
-      - name: Log in to GHCR
-        run: echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
-      - name: Push image tags
-        continue-on-error: true
-        env:
-          VERSION_TAG: v${{ env.VERSION }}
-          DATED_TAG: v${{ env.VERSION }}-${{ env.BUILD_DATE }}
-        run: |
-          docker push "${IMAGE}:${VERSION_TAG}"
-          docker push "${IMAGE}:${DATED_TAG}"
-          docker push "${IMAGE}:latest"
       - name: Export image archive
         env:
           VERSION_TAG: v${{ env.VERSION }}
@@ -91,8 +80,26 @@ jobs:
             gh release create "v${VERSION}" \
               --repo "$GITHUB_REPOSITORY" \
               --title "v${VERSION}" \
-              --notes "Release v${VERSION}"
+              --notes "aiqiezi-server v${VERSION}: online password change, --keep-clients, and offline --offline recovery."
       - name: Upload release assets
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "v${VERSION}" release/* --repo "$GITHUB_REPOSITORY" --clobber
+      - name: Log in to GHCR
+        env:
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        run: |
+          token="${GHCR_TOKEN:-${{ github.token }}}"
+          echo "$token" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Push image tags
+        env:
+          VERSION_TAG: v${{ env.VERSION }}
+          DATED_TAG: v${{ env.VERSION }}-${{ env.BUILD_DATE }}
+        run: |
+          docker push "${IMAGE}:${VERSION_TAG}"
+          docker push "${IMAGE}:${DATED_TAG}"
+          docker push "${IMAGE}:latest"
+      - name: Verify GHCR image
+        env:
+          VERSION_TAG: v${{ env.VERSION }}
+        run: docker manifest inspect "${IMAGE}:${VERSION_TAG}" >/dev/null

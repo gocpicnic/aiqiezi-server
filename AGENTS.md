@@ -153,11 +153,15 @@ create table clients (
 - The deployed `compose.yaml` contains secrets and must be mode `0600`; never
   commit the filled-in copy.
 - PostgreSQL is not part of the current Compose stack; add it back in Phase 2.
-- Pushing a `v*` tag always publishes a `docker save` archive, `compose.yaml`,
-  and `SHA256SUMS` as GitHub Release assets.
-- The workflow also attempts to publish the GHCR version, dated, and `latest`
-  tags. GHCR publishing is best-effort until package permissions and visibility
-  are configured; it must not block archive publication.
+- Pushing a `v*` tag publishes a `docker save` archive, `compose.yaml`, and
+  `SHA256SUMS` as GitHub Release assets, then publishes the GHCR version,
+  dated, and `latest` tags.
+- Upload release assets before pushing GHCR so the offline archive remains
+  available if the registry push fails.
+- GHCR failure must fail the release workflow so it is visible; rerun the
+  workflow after fixing registry access.
+- The GHCR package may be private. Document authentication for private pulls
+  and never put registry tokens in the repository.
 - The release image is Linux/amd64 only; Windows and macOS server images are not
   published.
 - Never include `.env` values, keys, auth state, database dumps, or media in

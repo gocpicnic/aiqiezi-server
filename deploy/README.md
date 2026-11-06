@@ -76,13 +76,16 @@ gunzip -c aiqiezi-server-X.Y.Z-linux-amd64.tar.gz | docker load
 The archive restores the version, dated version, and `latest` tags. The current
 `compose.yaml` uses `latest`, so it works without editing the image line.
 
-If the release is also published to GHCR and the package is publicly pullable,
-pulling is simpler:
+If the release is available in GHCR, pulling is simpler:
 
 ```bash
+docker login ghcr.io
 docker compose pull aiqiezi-server
 docker compose up -d aiqiezi-server
 ```
+
+The GHCR package may be private. Use a GitHub token with package read access
+when prompted, or make the package public in its GitHub package settings.
 
 If GHCR is unavailable, use the release archive; it is the guaranteed
 distribution format.

@@ -369,7 +369,7 @@ Use `make docker-save` when the remote server cannot pull from GHCR. The saved
 archive contains both the dated tag and `latest`.
 
 Pushing a `v*` tag runs the GitHub Actions release workflow. It builds the
-offline image archive and attempts to publish these GHCR tags:
+offline image archive and publishes these GHCR tags:
 
 ```text
 ghcr.io/gocpicnic/aiqiezi-server:vX.Y.Z
@@ -377,8 +377,12 @@ ghcr.io/gocpicnic/aiqiezi-server:vX.Y.Z-YYYYMMDDHHMMSS
 ghcr.io/gocpicnic/aiqiezi-server:latest
 ```
 
-GHCR publishing is best-effort until the package permissions and visibility are
-configured. The offline archive is always attached to the release.
+Release assets are uploaded before the GHCR push, so the offline archive
+remains available if the registry push fails. A failed GHCR push fails the
+workflow and must be retried.
+
+The GHCR package may be private. To pull it on a server, authenticate first or
+make the package public in its GitHub package settings.
 
 The release includes:
 

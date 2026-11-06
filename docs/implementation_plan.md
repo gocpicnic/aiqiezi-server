@@ -1075,7 +1075,8 @@ Build flow:
 4. docker build (Debian slim runtime + entrypoint)
 5. docker save the version, dated, and latest tags
 6. attach the image archive, compose.yaml, and SHA256SUMS to the GitHub Release
-7. best-effort docker push to GHCR when package permissions are available
+7. docker push the version, dated, and latest tags to GHCR
+8. verify the published GHCR manifest
 ```
 
 Requirements:
@@ -1083,8 +1084,9 @@ Requirements:
 - release builds happen only for `v*` tags;
 - NAS/manual deployments use `latest`; keep dated tags for rollback;
 - always publish the offline `docker save` archive for NAS hosts;
-- treat GHCR publishing as best-effort until package permissions and visibility
-  are configured;
+- upload release assets before pushing GHCR;
+- a GHCR push failure fails the workflow and must be fixed and rerun;
+- document authentication for private GHCR pulls;
 - never deploy `main` or untagged images;
 - use `GITHUB_TOKEN` with least privilege;
 - no QEMU-based ARM builds initially;
