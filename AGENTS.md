@@ -185,6 +185,8 @@ create table clients (
   iroh.
 - Admin requests use JSON Lines, one request per connection.
 - The daemon owns database writes and updates the whitelist cache immediately.
+- `set-password` is a daemon-owned admin write. The online path uses the admin
+  socket; the `--offline` recovery path holds the instance lock.
 - `migrate` and `migrate-status` are one-shot commands outside the daemon and
   must hold the same instance lock.
 - Do not run two daemon processes against the same PostgreSQL database or media
@@ -268,8 +270,15 @@ aiqiezi-server client-enable <endpoint-id>
 aiqiezi-server client-remove <endpoint-id>
 ```
 
-`set-password` is an optional offline command for terminal users. It requires
-the daemon to be stopped and holds the instance lock.
+`set-password` changes the password through the running daemon over the local
+admin socket. It verifies the current password, stores a new Argon2id hash,
+and by default clears the whitelist so every client must re-enroll. The
+`--keep-clients` option preserves the whitelist for password-only rotation.
+
+The `--offline` option is a recovery path for terminal users. It requires the
+daemon to be stopped and holds the instance lock. Do not use the offline path
+through `docker compose run` while the daemon is running; the one-off container
+does not share the runtime directory lock.
 
 Clients generate and persist their own iroh secret key. They never store the
 server password.
@@ -285,6 +294,7 @@ sqlx migrate run
 cargo run -p aiqiezi-server -- start
 cargo run -p aiqiezi-server -- whoami
 cargo run -p aiqiezi-server -- set-password
+cargo run -p aiqiezi-server -- set-password --offline
 ```
 
 ## Source file rules

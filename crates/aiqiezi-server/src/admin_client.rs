@@ -7,12 +7,21 @@
 
 use aiqiezi_proto::{Request, Response, PROTOCOL_VERSION};
 use anyhow::Context;
+use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 
 use crate::config::Config;
 
 pub async fn request(config: &Config, command: &str) -> anyhow::Result<Response> {
+    request_with_params(config, command, json!({})).await
+}
+
+pub async fn request_with_params(
+    config: &Config,
+    command: &str,
+    params: Value,
+) -> anyhow::Result<Response> {
     let socket_path = config.admin_socket_path();
     let stream = UnixStream::connect(&socket_path).await.with_context(|| {
         format!(
@@ -26,7 +35,7 @@ pub async fn request(config: &Config, command: &str) -> anyhow::Result<Response>
         version: PROTOCOL_VERSION,
         request_id: Some(format!("cli-{}", std::process::id())),
         command: command.to_string(),
-        params: serde_json::json!({}),
+        params,
     };
     let mut encoded = serde_json::to_vec(&request)
         .map_err(|error| anyhow::anyhow!("encode admin request: {error}"))?;

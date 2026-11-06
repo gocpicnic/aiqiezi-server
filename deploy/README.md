@@ -163,7 +163,17 @@ not grant access. The password change enrolls the client EndpointId in the
 server whitelist. No terminal on the server host is required.
 
 Do not edit `keys/auth.json` manually. Use `change-password` from a client or
-the offline `set-password` command.
+the server-side `set-password` command.
+
+Change the password without stopping the daemon:
+
+```bash
+docker compose exec -it aiqiezi-server aiqiezi-server set-password
+```
+
+The command uses the running daemon's admin socket, so there is no downtime.
+By default it clears the client whitelist; every client must authenticate again
+with the new password. Add `--keep-clients` to keep existing clients enrolled.
 
 If the password is lost, stop the server, remove
 `/mnt/data/aiqiezi/keys/auth.json`, set a new
@@ -175,9 +185,13 @@ stopped:
 
 ```bash
 docker compose stop aiqiezi-server
-docker compose run --rm -it aiqiezi-server aiqiezi-server set-password
+docker compose run --rm -it aiqiezi-server aiqiezi-server set-password --offline
 docker compose up -d aiqiezi-server
 ```
+
+Do not use the offline command through `docker compose run` while the daemon is
+running. The one-off container has a separate runtime directory and cannot see
+the daemon's instance lock.
 
 ## Verify the daemon
 
@@ -186,6 +200,7 @@ docker compose exec aiqiezi-server aiqiezi-server --version
 docker compose exec aiqiezi-server aiqiezi-server whoami
 docker compose exec aiqiezi-server aiqiezi-server status
 docker compose exec aiqiezi-server aiqiezi-server healthcheck
+docker compose exec -it aiqiezi-server aiqiezi-server set-password
 ```
 
 `aiqiezi-server` is the Compose service name. `docker compose exec` runs the

@@ -401,6 +401,7 @@ status
 healthcheck
 shutdown
 reload-whitelist
+set-password
 ```
 
 `status` returns safe operational information:
@@ -540,8 +541,13 @@ Implement:
 - `start` as the primary foreground daemon command, with `run` as an alias;
 - `whoami` as a read-only command that prints only the persistent server
   EndpointId and does not create a key;
-- `set-password` as an optional offline command that holds the instance lock,
-  verifies the old password when present, and clears the whitelist.
+- `set-password` as an online admin command over the local admin socket that
+  verifies the old password, stores a new Argon2id hash, and clears the
+  whitelist by default;
+- `set-password --keep-clients` to preserve the current whitelist during a
+  password-only rotation;
+- `set-password --offline` as a recovery path that holds the instance lock and
+  requires the daemon to be stopped.
 
 ## Phase 2 — PostgreSQL foundation
 

@@ -187,6 +187,7 @@ docker compose exec aiqiezi-server aiqiezi-server --version
 docker compose exec aiqiezi-server aiqiezi-server whoami
 docker compose exec aiqiezi-server aiqiezi-server status
 docker compose exec aiqiezi-server aiqiezi-server healthcheck
+docker compose exec -it aiqiezi-server aiqiezi-server set-password
 docker compose exec aiqiezi-server aiqiezi-server shutdown
 ```
 
@@ -194,35 +195,49 @@ docker compose exec aiqiezi-server aiqiezi-server shutdown
 persistent server key to exist; start the server once before using it.
 
 Do not add the `run` subcommand to these commands. `docker compose run` starts
-a separate one-off container and is only used for operations such as
-`migrate` and `set-password`.
+a separate one-off container and is only used for one-shot operations such as
+`migrate`.
 
 `shutdown` exits the process; with the Compose restart policy Docker may start
 it again. Use `docker compose stop aiqiezi-server` when it should stay stopped.
 
-`whoami`, `status`, `healthcheck`, and `shutdown` are implemented. `whoami`
-prints only the server EndpointId and requires an existing server key.
-Bootstrap login,
-`change-password`, Argon2id password storage, and the EndpointId firewall are
-implemented. Database, migration, and media-storage fields currently report
-`not_configured` or `database_unavailable` until Phase 2/3. The `client-add`,
-`client-list`, `client-disable`, `client-enable`, and `client-remove` commands
-are deferred until Phase 3.
+`whoami`, `status`, `healthcheck`, `set-password`, and `shutdown` are
+implemented. `whoami` prints only the server EndpointId and requires an
+existing server key. Bootstrap login, `change-password`, Argon2id password
+storage, and the EndpointId firewall are implemented. Database, migration, and
+media-storage fields currently report `not_configured` or
+`database_unavailable` until Phase 2/3. The `client-add`, `client-list`,
+`client-disable`, `client-enable`, and `client-remove` commands are deferred
+until Phase 3.
 
 The daemon owns all writes. Client whitelist changes take effect for subsequent
 connections without restarting the daemon.
 
-For terminal-based recovery or offline rotation, stop the daemon and run:
+### Change the server password
+
+Change the password without stopping the daemon:
+
+```bash
+docker compose exec -it aiqiezi-server aiqiezi-server set-password
+```
+
+The command sends the change to the running daemon over the admin socket. It
+verifies the current password and updates `keys/auth.json` immediately. By
+default all enrolled clients are cleared and must authenticate again with the
+new password. Add `--keep-clients` to keep existing enrolled clients authorized.
+
+The offline path still exists for recovery when the daemon is stopped:
 
 ```bash
 docker compose stop aiqiezi-server
-docker compose run --rm -it aiqiezi-server aiqiezi-server set-password
+docker compose run --rm -it aiqiezi-server aiqiezi-server set-password --offline
 docker compose up -d aiqiezi-server
 ```
 
-`set-password` holds the instance lock and clears the whitelist. NAS and
-Compose users normally use `change-password` from the client instead and do not
-need a terminal on the server host.
+`--offline` holds the instance lock and should only be used while the daemon is
+stopped. Use `docker compose exec`, not `docker compose run`, for the online
+path. NAS and Compose users normally use `change-password` from the client
+instead and do not need a terminal on the server host.
 
 PostgreSQL migrations are not implemented yet, and PostgreSQL is not part of
 the current stack. Phase 2 will add them as a one-shot operation outside the
@@ -422,7 +437,7 @@ Phase 1, Phase 1B, and bootstrap authentication are implemented:
 - exclusive daemon instance lock
 - local Unix admin socket with restrictive permissions
 - read-only `whoami` command for the server EndpointId
-- `status`, `healthcheck`, and `shutdown` admin commands
+- `status`, `healthcheck`, `set-password`, and `shutdown` admin commands
 - Docker runtime image, Compose stack, and production deployment guide
 - in-process transport and lock/admin tests
 

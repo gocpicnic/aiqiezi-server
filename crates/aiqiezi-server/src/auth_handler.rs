@@ -147,6 +147,7 @@ async fn handle_login(
         );
     }
 
+    let password_revision = state.password_revision();
     let verified = match state.verify_password(password).await {
         Ok(verified) => verified,
         Err(message) => {
@@ -173,12 +174,22 @@ async fn handle_login(
         );
     }
 
-    if let Err(error) = state.enroll_client(remote_id) {
-        return Response::error(
-            request_id,
-            error_codes::INTERNAL,
-            format!("failed to enroll client: {error}"),
-        );
+    match state.enroll_client_if_revision(remote_id, password_revision) {
+        Ok(true) => {}
+        Ok(false) => {
+            return Response::error(
+                request_id,
+                error_codes::INVALID_CREDENTIALS,
+                "password changed during authentication; log in again",
+            );
+        }
+        Err(error) => {
+            return Response::error(
+                request_id,
+                error_codes::INTERNAL,
+                format!("failed to enroll client: {error}"),
+            );
+        }
     }
 
     info!("client authenticated: {remote_id}");

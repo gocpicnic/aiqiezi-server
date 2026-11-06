@@ -21,6 +21,7 @@ mod shutdown;
 mod version;
 
 use clap::{Parser, Subcommand};
+use serde_json::json;
 use std::process::ExitCode;
 
 use crate::config::Config;
@@ -45,8 +46,15 @@ enum Command {
     Start,
     /// Print the server's persistent EndpointId
     Whoami,
-    /// Set or change the server password while the daemon is stopped
-    SetPassword,
+    /// Set or change the server password through the running daemon
+    SetPassword {
+        /// Use the offline path; the daemon must be stopped
+        #[arg(long)]
+        offline: bool,
+        /// Keep existing enrolled clients
+        #[arg(long)]
+        keep_clients: bool,
+    },
     /// Query the running daemon status
     Status,
     /// Check daemon health
@@ -86,7 +94,10 @@ fn run(cli: Cli) -> Result<(), AppError> {
         match cli.command.unwrap_or(Command::Start) {
             Command::Start => daemon::run(&config).await.map_err(AppError::Runtime),
             Command::Whoami => run_whoami(&config),
-            Command::SetPassword => run_set_password(&config),
+            Command::SetPassword {
+                offline,
+                keep_clients,
+            } => run_set_password(&config, offline, keep_clients).await,
             Command::Status => run_admin(&config, "status").await,
             Command::Healthcheck => run_admin(&config, "healthcheck").await,
             Command::Shutdown => run_admin(&config, "shutdown").await,
@@ -100,9 +111,11 @@ fn run_whoami(config: &Config) -> Result<(), AppError> {
     Ok(())
 }
 
-fn run_set_password(config: &Config) -> Result<(), AppError> {
-    let _lock = InstanceLock::acquire(&config.runtime_dir).map_err(AppError::Runtime)?;
-
+async fn run_set_password(
+    config: &Config,
+    offline: bool,
+    keep_clients: bool,
+) -> Result<(), AppError> {
     let old_password = if auth::password_hash_exists(&config.keys_dir) {
         Some(
             rpassword::prompt_password("current password: ")
@@ -120,10 +133,58 @@ fn run_set_password(config: &Config) -> Result<(), AppError> {
         return Err(AppError::Runtime(anyhow::anyhow!("passwords do not match")));
     }
 
-    auth::set_password_offline(&config.keys_dir, old_password.as_deref(), &new_password)
-        .map_err(AppError::Runtime)?;
+    if !offline {
+        let response = admin_client::request_with_params(
+            config,
+            "set-password",
+            json!({
+                "old_password": old_password.clone().unwrap_or_default(),
+                "new_password": new_password,
+                "keep_clients": keep_clients,
+            }),
+        )
+        .await
+        .map_err(|error| {
+            AppError::Runtime(error.context(
+                "set-password requires the running daemon; use --offline only when it is stopped",
+            ))
+        })?;
 
-    println!("password changed; all clients must authenticate again");
+        if let Some(error) = response.error {
+            return Err(AppError::Admin {
+                code: error.code,
+                message: error.message,
+            });
+        }
+
+        if let Some(message) = response
+            .data
+            .as_ref()
+            .and_then(|data| data.get("message"))
+            .and_then(|value| value.as_str())
+        {
+            println!("{message}");
+        } else {
+            println!("password changed");
+        }
+        return Ok(());
+    }
+
+    let _lock = InstanceLock::acquire(&config.runtime_dir).map_err(AppError::Runtime)?;
+
+    auth::set_password_offline(
+        &config.keys_dir,
+        old_password.as_deref(),
+        &new_password,
+        keep_clients,
+    )
+    .map_err(AppError::Runtime)?;
+
+    if keep_clients {
+        println!("password changed; existing clients remain authorized");
+    } else {
+        println!("password changed; all clients must authenticate again");
+    }
     Ok(())
 }
 

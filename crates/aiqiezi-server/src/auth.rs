@@ -43,6 +43,7 @@ struct AuthData {
     password_hash: String,
     must_change_password: bool,
     clients: HashSet<EndpointId>,
+    revision: u64,
 }
 
 impl fmt::Debug for AuthData {
@@ -78,6 +79,7 @@ impl AuthData {
             password_hash: file.password_hash,
             must_change_password: file.must_change_password,
             clients,
+            revision: 0,
         })
     }
 
@@ -137,6 +139,7 @@ impl AuthState {
                 password_hash,
                 must_change_password: true,
                 clients: HashSet::new(),
+                revision: 0,
             };
             save_auth_file(keys_dir, &data)?;
             info!("bootstrap password hash created; password change required");
@@ -188,29 +191,55 @@ impl AuthState {
             .clone()
     }
 
-    pub fn enroll_client(&self, endpoint_id: EndpointId) -> anyhow::Result<()> {
-        let mut data = self.data.write().expect("auth state lock poisoned");
-        if data.clients.contains(&endpoint_id) {
-            return Ok(());
-        }
-
-        let mut next = data.clone();
-        next.clients.insert(endpoint_id);
-        save_auth_file(&self.keys_dir, &next)?;
-        *data = next;
-        Ok(())
-    }
-
     pub fn change_password(&self, new_hash: String, caller: EndpointId) -> anyhow::Result<()> {
         let mut data = self.data.write().expect("auth state lock poisoned");
         let next = AuthData {
             password_hash: new_hash,
             must_change_password: false,
             clients: HashSet::from([caller]),
+            revision: data.revision.saturating_add(1),
         };
         save_auth_file(&self.keys_dir, &next)?;
         *data = next;
         Ok(())
+    }
+
+    pub fn reset_password(&self, new_hash: String, keep_clients: bool) -> anyhow::Result<()> {
+        let mut data = self.data.write().expect("auth state lock poisoned");
+        let mut next = data.clone();
+        next.password_hash = new_hash;
+        next.must_change_password = false;
+        next.revision = data.revision.saturating_add(1);
+        if !keep_clients {
+            next.clients.clear();
+        }
+        save_auth_file(&self.keys_dir, &next)?;
+        *data = next;
+        Ok(())
+    }
+
+    pub fn password_revision(&self) -> u64 {
+        self.data.read().expect("auth state lock poisoned").revision
+    }
+
+    pub fn enroll_client_if_revision(
+        &self,
+        endpoint_id: EndpointId,
+        revision: u64,
+    ) -> anyhow::Result<bool> {
+        let mut data = self.data.write().expect("auth state lock poisoned");
+        if data.revision != revision {
+            return Ok(false);
+        }
+        if data.clients.contains(&endpoint_id) {
+            return Ok(true);
+        }
+
+        let mut next = data.clone();
+        next.clients.insert(endpoint_id);
+        save_auth_file(&self.keys_dir, &next)?;
+        *data = next;
+        Ok(true)
     }
 
     pub fn login_retry_after(&self, endpoint_id: &EndpointId) -> Option<u64> {
@@ -259,6 +288,13 @@ impl AuthState {
             .remove(endpoint_id);
     }
 
+    pub fn clear_all_login_failures(&self) {
+        self.login_failures
+            .lock()
+            .expect("login failure lock poisoned")
+            .clear();
+    }
+
     pub async fn verify_password(&self, password: String) -> Result<bool, String> {
         let _permit = self
             .verification_permits
@@ -295,10 +331,12 @@ pub fn set_password_offline(
     keys_dir: &Path,
     old_password: Option<&str>,
     new_password: &str,
+    keep_clients: bool,
 ) -> anyhow::Result<()> {
     create_private_dir(keys_dir)?;
     let auth_path = auth_file_path(keys_dir);
 
+    let mut clients = HashSet::new();
     if auth_path.exists() {
         ensure_private_file(&auth_path)?;
         let current = AuthData::from_file(read_auth_file(&auth_path)?)?;
@@ -310,6 +348,9 @@ pub fn set_password_offline(
         if verify_password_hash(&current.password_hash, new_password) {
             bail!("new password must differ from the current password");
         }
+        if keep_clients {
+            clients = current.clients;
+        }
     }
 
     validate_password_strength(new_password).map_err(anyhow::Error::msg)?;
@@ -317,7 +358,8 @@ pub fn set_password_offline(
     let next = AuthData {
         password_hash,
         must_change_password: false,
-        clients: HashSet::new(),
+        clients,
+        revision: 0,
     };
     save_auth_file(keys_dir, &next)?;
     Ok(())
@@ -487,11 +529,60 @@ mod tests {
     }
 
     #[test]
+    fn reset_password_respects_keep_clients() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = AuthState::load_or_initialize(dir.path(), Some(BOOTSTRAP)).unwrap();
+        let caller = endpoint_id();
+        state
+            .enroll_client_if_revision(caller, state.password_revision())
+            .unwrap();
+
+        state
+            .reset_password(hash_password(NEW_PASSWORD).unwrap(), true)
+            .unwrap();
+        assert!(state.is_client_allowed(&caller));
+        assert_eq!(state.client_count(), 1);
+        assert!(!state.must_change_password());
+        assert!(verify_password_hash(&state.password_hash(), NEW_PASSWORD));
+
+        state
+            .reset_password(hash_password("NewerPass-789!").unwrap(), false)
+            .unwrap();
+        assert_eq!(state.client_count(), 0);
+        assert!(!state.is_client_allowed(&caller));
+        assert!(verify_password_hash(
+            &state.password_hash(),
+            "NewerPass-789!"
+        ));
+    }
+
+    #[test]
+    fn enrollment_rejects_a_password_revision_change() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = AuthState::load_or_initialize(dir.path(), Some(BOOTSTRAP)).unwrap();
+        let caller = endpoint_id();
+        let revision = state.password_revision();
+
+        state
+            .reset_password(hash_password(NEW_PASSWORD).unwrap(), true)
+            .unwrap();
+        assert_ne!(state.password_revision(), revision);
+        assert!(!state.enroll_client_if_revision(caller, revision).unwrap());
+        assert_eq!(state.client_count(), 0);
+        assert!(state
+            .enroll_client_if_revision(caller, state.password_revision())
+            .unwrap());
+        assert_eq!(state.client_count(), 1);
+    }
+
+    #[test]
     fn whitelist_persists_across_restart() {
         let dir = tempfile::tempdir().unwrap();
         let state = AuthState::load_or_initialize(dir.path(), Some(BOOTSTRAP)).unwrap();
         let caller = endpoint_id();
-        state.enroll_client(caller).unwrap();
+        state
+            .enroll_client_if_revision(caller, state.password_revision())
+            .unwrap();
         drop(state);
 
         let state = AuthState::load_or_initialize(dir.path(), None).unwrap();
@@ -504,10 +595,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let state = AuthState::load_or_initialize(dir.path(), Some(BOOTSTRAP)).unwrap();
         let caller = endpoint_id();
-        state.enroll_client(caller).unwrap();
+        state
+            .enroll_client_if_revision(caller, state.password_revision())
+            .unwrap();
         drop(state);
 
-        set_password_offline(dir.path(), Some(BOOTSTRAP), NEW_PASSWORD).unwrap();
+        set_password_offline(dir.path(), Some(BOOTSTRAP), NEW_PASSWORD, false).unwrap();
 
         let state = AuthState::load_or_initialize(dir.path(), None).unwrap();
         assert_eq!(state.client_count(), 0);
@@ -515,11 +608,29 @@ mod tests {
     }
 
     #[test]
+    fn offline_password_change_can_keep_clients() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = AuthState::load_or_initialize(dir.path(), Some(BOOTSTRAP)).unwrap();
+        let caller = endpoint_id();
+        state
+            .enroll_client_if_revision(caller, state.password_revision())
+            .unwrap();
+        drop(state);
+
+        set_password_offline(dir.path(), Some(BOOTSTRAP), NEW_PASSWORD, true).unwrap();
+
+        let state = AuthState::load_or_initialize(dir.path(), None).unwrap();
+        assert_eq!(state.client_count(), 1);
+        assert!(state.is_client_allowed(&caller));
+        assert!(verify_password_hash(&state.password_hash(), NEW_PASSWORD));
+    }
+
+    #[test]
     fn offline_password_change_requires_current_password() {
         let dir = tempfile::tempdir().unwrap();
         AuthState::load_or_initialize(dir.path(), Some(BOOTSTRAP)).unwrap();
-        assert!(set_password_offline(dir.path(), None, NEW_PASSWORD).is_err());
-        assert!(set_password_offline(dir.path(), Some("wrong"), NEW_PASSWORD).is_err());
+        assert!(set_password_offline(dir.path(), None, NEW_PASSWORD, false).is_err());
+        assert!(set_password_offline(dir.path(), Some("wrong"), NEW_PASSWORD, false).is_err());
     }
 
     #[test]
