@@ -9,7 +9,7 @@ repository = "https://github.com/gocpicnic/aiqiezi-server"
 [dependencies]
 aiqiezi-proto = { path = "../aiqiezi-proto" }
 anyhow = "1"
-argon2 = "0.5"
+argon2 = "0.6"
 clap = { version = "4", features = ["derive"] }
 iroh = "1.0"
 iroh-mdns-address-lookup = "0.4"
